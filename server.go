@@ -42,7 +42,7 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p, err := parseParams(r)
+	p, err := k.parseParams(r)
 	if err != nil {
 		writeError(w, &apiError{Code: http.StatusBadRequest, Description: "Bad Request: " + err.Error()})
 		return
@@ -75,7 +75,7 @@ func route(path string) (token, method string, ok bool) {
 	return token, method, true
 }
 
-func parseParams(r *http.Request) (params, error) {
+func (k *Kitchen) parseParams(r *http.Request) (params, error) {
 	mediaType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil && r.Header.Get("Content-Type") != "" {
 		return nil, err
@@ -89,11 +89,23 @@ func parseParams(r *http.Request) (params, error) {
 			}
 			return params{}, nil
 		}
-		p := make(params, len(r.MultipartForm.Value))
+		p := make(params, len(r.MultipartForm.Value)+len(r.MultipartForm.File))
 		for name, values := range r.MultipartForm.Value {
 			if len(values) > 0 {
 				p[name] = values[0]
 			}
+		}
+		// An upload is stored and then read as the file id it was issued, so a
+		// method sees one shape whether the bot sent bytes or an existing id.
+		for name, headers := range r.MultipartForm.File {
+			if len(headers) == 0 {
+				continue
+			}
+			f, err := k.files.upload(headers[0])
+			if err != nil {
+				return nil, err
+			}
+			p[name] = f.ID
 		}
 		return p, nil
 

@@ -1,6 +1,6 @@
 // Package kitchen stands up an in-process fake Telegram Bot API and drives a
-// real bot through it, so a conversation becomes an ordinary Go test
-
+// real bot through it, so a conversation becomes an ordinary Go test.
+//
 // The bot under test is never modified; only the server it talks to is
 // replaced. Point its API base at APIURL and give it Token.
 package kitchen
@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -26,6 +27,9 @@ type Kitchen struct {
 	tb     TB
 	token  string
 	server *httptest.Server
+	clock  *Clock
+	world  *world
+	files  *mediaStore
 
 	mu      sync.RWMutex
 	bot     models.User
@@ -42,16 +46,21 @@ func WithBotUsername(username string) Option {
 	return func(k *Kitchen) { k.bot.Username = username }
 }
 
+func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now = t } }
+
 func New(tb TB, opts ...Option) *Kitchen {
 	k := &Kitchen{
 		tb:    tb,
 		token: defaultToken,
+		clock: &Clock{now: defaultStartTime},
+		files: newMediaStore(),
 		bot:   models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
 	}
 	for _, opt := range opts {
 		opt(k)
 	}
 	k.bot.ID = botIDFrom(k.token)
+	k.world = newWorld(k.clock)
 
 	k.server = httptest.NewServer(http.HandlerFunc(k.serve))
 	tb.Cleanup(k.server.Close)
@@ -61,6 +70,11 @@ func New(tb TB, opts ...Option) *Kitchen {
 func (k *Kitchen) APIURL() string { return k.server.URL }
 
 func (k *Kitchen) Token() string { return k.token }
+
+func (k *Kitchen) Clock() *Clock { return k.clock }
+
+// File returns an upload the bot sent, by the file id the kitchen issued for it.
+func (k *Kitchen) File(fileID string) (File, bool) { return k.files.get(fileID) }
 
 func botIDFrom(token string) int64 {
 	id, err := strconv.ParseInt(strings.SplitN(token, ":", 2)[0], 10, 64)
