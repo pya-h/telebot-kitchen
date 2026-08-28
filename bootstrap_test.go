@@ -44,10 +44,7 @@ func TestWebhookLifecycle(t *testing.T) {
 func TestBotBootsAgainstKitchen(t *testing.T) {
 	k := New(t)
 
-	b, err := bot.New(k.Token(), bot.WithServerURL(k.APIURL()))
-	if err != nil {
-		t.Fatalf("bot.New: %v", err)
-	}
+	b := newClient(t, k)
 	if _, err := b.SetWebhook(context.Background(), &bot.SetWebhookParams{
 		URL:         "https://example.test/hook",
 		SecretToken: "s3cret",

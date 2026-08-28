@@ -55,16 +55,58 @@ func (w *world) message(chatID int64, messageID int) (models.Message, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
 
+	m := w.find(chatID, messageID)
+	if m == nil {
+		return models.Message{}, false
+	}
+	return *m, true
+}
+
+func (w *world) find(chatID int64, messageID int) *models.Message {
 	c, ok := w.chats[chatID]
 	if !ok {
-		return models.Message{}, false
+		return nil
 	}
 	for _, m := range c.messages {
 		if m.ID == messageID {
-			return *m, true
+			return m
 		}
 	}
-	return models.Message{}, false
+	return nil
+}
+
+// edit reports ok when the message exists and changed when mutate found
+// anything to alter; an edit that changes nothing is an error to Telegram.
+func (w *world) edit(chatID int64, messageID int, mutate func(*models.Message) bool) (edited models.Message, changed, ok bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	m := w.find(chatID, messageID)
+	if m == nil {
+		return models.Message{}, false, false
+	}
+	if !mutate(m) {
+		return *m, false, true
+	}
+	m.EditDate = int(w.clock.Now().Unix())
+	return *m, true, true
+}
+
+func (w *world) remove(chatID int64, messageID int) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return false
+	}
+	for i, m := range c.messages {
+		if m.ID == messageID {
+			c.messages = append(c.messages[:i], c.messages[i+1:]...)
+			return true
+		}
+	}
+	return false
 }
 
 func (w *world) latest(chatID int64) (models.Message, bool) {

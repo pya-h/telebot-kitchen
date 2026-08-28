@@ -5,8 +5,11 @@ import (
 	"io"
 	"mime/multipart"
 	"sync"
-	"sync/atomic"
+
+	"github.com/go-telegram/bot/models"
 )
+
+const defaultPhotoDimension = 512
 
 type File struct {
 	ID       string
@@ -17,23 +20,23 @@ type File struct {
 
 type mediaStore struct {
 	mu     sync.RWMutex
-	nextID atomic.Int64
+	nextID int64
 	files  map[string]File
 }
 
 func newMediaStore() *mediaStore { return &mediaStore{files: map[string]File{}} }
 
 func (s *mediaStore) add(name string, data []byte) File {
-	n := s.nextID.Add(1)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.nextID++
 	f := File{
-		ID:       fmt.Sprintf("file-%d", n),
-		UniqueID: fmt.Sprintf("unique-%d", n),
+		ID:       fmt.Sprintf("file-%d", s.nextID),
+		UniqueID: fmt.Sprintf("unique-%d", s.nextID),
 		Name:     name,
 		Data:     data,
 	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.files[f.ID] = f
 	return f
 }
@@ -57,4 +60,20 @@ func (s *mediaStore) get(id string) (File, bool) {
 	defer s.mu.RUnlock()
 	f, ok := s.files[id]
 	return f, ok
+}
+
+// A file id the store never issued is one the bot re-sent from an earlier
+// message, so it stays addressable even though the bytes are unknown here.
+func (s *mediaStore) photoSizes(fileID string) []models.PhotoSize {
+	f, ok := s.get(fileID)
+	if !ok {
+		f = File{ID: fileID, UniqueID: "unique-" + fileID}
+	}
+	return []models.PhotoSize{{
+		FileID:       f.ID,
+		FileUniqueID: f.UniqueID,
+		Width:        defaultPhotoDimension,
+		Height:       defaultPhotoDimension,
+		FileSize:     len(f.Data),
+	}}
 }

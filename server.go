@@ -7,7 +7,10 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
+
+	"github.com/go-telegram/bot/models"
 )
 
 const maxUploadMemory = 8 << 20
@@ -15,10 +18,17 @@ const maxUploadMemory = 8 << 20
 type apiMethod func(*Kitchen, params) (any, error)
 
 var apiMethods = map[string]apiMethod{
-	"getMe":          (*Kitchen).getMe,
-	"setWebhook":     (*Kitchen).setWebhook,
-	"deleteWebhook":  (*Kitchen).deleteWebhook,
-	"getWebhookInfo": (*Kitchen).getWebhookInfo,
+	"getMe":                  (*Kitchen).getMe,
+	"setWebhook":             (*Kitchen).setWebhook,
+	"deleteWebhook":          (*Kitchen).deleteWebhook,
+	"getWebhookInfo":         (*Kitchen).getWebhookInfo,
+	"sendMessage":            (*Kitchen).sendMessage,
+	"sendPhoto":              (*Kitchen).sendPhoto,
+	"editMessageText":        (*Kitchen).editMessageText,
+	"editMessageCaption":     (*Kitchen).editMessageCaption,
+	"editMessageReplyMarkup": (*Kitchen).editMessageReplyMarkup,
+	"deleteMessage":          (*Kitchen).deleteMessage,
+	"answerCallbackQuery":    (*Kitchen).answerCallbackQuery,
 }
 
 type params map[string]string
@@ -29,6 +39,46 @@ func (p params) decode(name string, dst any) error {
 		return nil
 	}
 	return json.Unmarshal([]byte(raw), dst)
+}
+
+func (p params) chatID() (int64, error) {
+	id, err := strconv.ParseInt(p["chat_id"], 10, 64)
+	if err != nil {
+		return 0, badRequest("chat_id")
+	}
+	return id, nil
+}
+
+func (p params) messageID() (int, error) {
+	id, err := strconv.Atoi(p["message_id"])
+	if err != nil || id <= 0 {
+		return 0, badRequest("message_id")
+	}
+	return id, nil
+}
+
+// An absent or empty keyboard is normalized to nil, so "no keyboard" has one
+// representation whichever way the bot expressed it.
+func (p params) markup() (*models.InlineKeyboardMarkup, error) {
+	raw, ok := p["reply_markup"]
+	if !ok || raw == "" {
+		return nil, nil
+	}
+	markup := &models.InlineKeyboardMarkup{}
+	if err := json.Unmarshal([]byte(raw), markup); err != nil {
+		return nil, badRequest("reply_markup")
+	}
+	if len(markup.InlineKeyboard) == 0 {
+		return nil, nil
+	}
+	return markup, nil
+}
+
+func (p params) flag(name string) bool { return p[name] == "true" }
+
+func (p params) number(name string) int {
+	n, _ := strconv.Atoi(p[name])
+	return n
 }
 
 func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
@@ -145,6 +195,12 @@ type apiError struct {
 	Description string
 	RetryAfter  int
 }
+
+func requestError(description string) *apiError {
+	return &apiError{Code: http.StatusBadRequest, Description: "Bad Request: " + description}
+}
+
+func badRequest(field string) *apiError { return requestError("can't parse field " + field) }
 
 func (e *apiError) Error() string { return fmt.Sprintf("kitchen: %d %s", e.Code, e.Description) }
 

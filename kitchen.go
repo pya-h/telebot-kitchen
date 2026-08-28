@@ -24,12 +24,13 @@ type TB interface {
 }
 
 type Kitchen struct {
-	tb     TB
-	token  string
-	server *httptest.Server
-	clock  *Clock
-	world  *world
-	files  *mediaStore
+	tb        TB
+	token     string
+	server    *httptest.Server
+	clock     *Clock
+	world     *world
+	files     *mediaStore
+	callbacks *callbackLog
 
 	mu      sync.RWMutex
 	bot     models.User
@@ -50,11 +51,12 @@ func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now =
 
 func New(tb TB, opts ...Option) *Kitchen {
 	k := &Kitchen{
-		tb:    tb,
-		token: defaultToken,
-		clock: &Clock{now: defaultStartTime},
-		files: newMediaStore(),
-		bot:   models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
+		tb:        tb,
+		token:     defaultToken,
+		clock:     &Clock{now: defaultStartTime},
+		files:     newMediaStore(),
+		callbacks: newCallbackLog(),
+		bot:       models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
 	}
 	for _, opt := range opts {
 		opt(k)
@@ -75,6 +77,12 @@ func (k *Kitchen) Clock() *Clock { return k.clock }
 
 // File returns an upload the bot sent, by the file id the kitchen issued for it.
 func (k *Kitchen) File(fileID string) (File, bool) { return k.files.get(fileID) }
+
+func (k *Kitchen) CallbackAnswer(queryID string) (CallbackAnswer, bool) {
+	return k.callbacks.byID(queryID)
+}
+
+func (k *Kitchen) CallbackAnswers() []CallbackAnswer { return k.callbacks.all() }
 
 func botIDFrom(token string) int64 {
 	id, err := strconv.ParseInt(strings.SplitN(token, ":", 2)[0], 10, 64)

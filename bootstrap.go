@@ -38,7 +38,3 @@ func (k *Kitchen) getWebhookInfo(params) (any, error) {
 	defer k.mu.RUnlock()
 	return models.WebhookInfo{URL: k.webhook.url, AllowedUpdates: k.webhook.allowedUpdates}, nil
 }
-
-func badRequest(field string) *apiError {
-	return &apiError{Code: 400, Description: "Bad Request: can't parse field " + field}
-}

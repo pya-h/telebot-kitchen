@@ -10,6 +10,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/go-telegram/bot"
 )
 
 // recordingTB stands in for *testing.T so the kitchen's own failure reporting
@@ -104,4 +106,13 @@ func callForm(t *testing.T, k *Kitchen, method string, fields map[string]string)
 
 func (k *Kitchen) methodURL(method string) string {
 	return k.APIURL() + "/bot" + k.token + "/" + method
+}
+
+func newClient(t *testing.T, k *Kitchen) *bot.Bot {
+	t.Helper()
+	b, err := bot.New(k.Token(), bot.WithServerURL(k.APIURL()))
+	if err != nil {
+		t.Fatalf("bot.New: %v", err)
+	}
+	return b
 }
