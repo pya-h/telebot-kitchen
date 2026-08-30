@@ -17,11 +17,11 @@ k.DeliverToWebhook(bot.WebhookHandler())  // let the kitchen hand updates to you
 
 alice := k.User(101)
 alice.Send("/start")
-alice.Tap("English")                      // tap an inline button by its label
+require.True(t, alice.ExpectReply().HasButton("English"))
 
-screen := alice.Screen()                  // what Alice sees right now
-require.Contains(t, screen.Text, "Welcome")
-require.True(t, screen.HasButton("Settings"))
+alice.Tap("English")                      // tap an inline button by its label
+reply := alice.ExpectReply()              // wait for the answer, never sleep
+require.Contains(t, reply.Text, "Welcome")
 ```
 
 ## How it works
@@ -54,6 +54,8 @@ updates by webhook or long-polling.
   text for debugging, golden tests, or human-readable acceptance evidence.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts
   on demand to exercise retry, backoff, and rate-limit handling.
+- **No sleeps** — wait for what the bot did, not for the clock; replies sent
+  from a worker goroutine are settled before your assertions run.
 - **Deterministic by design** — message and update IDs are stable and the clock
   is injectable, so tests read the same way every run.
 

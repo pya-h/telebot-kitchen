@@ -36,6 +36,7 @@ func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 func (k *Kitchen) deliver(u models.Update) {
 	k.deliverMu.Lock()
 	defer k.deliverMu.Unlock()
+	defer k.activity.note()
 
 	u.ID = k.world.nextUpdate()
 

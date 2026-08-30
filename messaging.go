@@ -59,12 +59,15 @@ func (k *Kitchen) editMessageText(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) bool {
+	return k.applyEdit(p, func(m *models.Message) error {
+		if len(m.Photo) > 0 {
+			return requestError("there is no text in the message to edit")
+		}
 		if m.Text == text && sameMarkup(m.ReplyMarkup, markup) {
-			return false
+			return errNotModified
 		}
 		m.Text, m.ReplyMarkup = text, markup
-		return true
+		return nil
 	})
 }
 
@@ -75,12 +78,15 @@ func (k *Kitchen) editMessageCaption(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) bool {
+	return k.applyEdit(p, func(m *models.Message) error {
+		if len(m.Photo) == 0 {
+			return requestError("there is no caption in the message to edit")
+		}
 		if m.Caption == caption && sameMarkup(m.ReplyMarkup, markup) {
-			return false
+			return errNotModified
 		}
 		m.Caption, m.ReplyMarkup = caption, markup
-		return true
+		return nil
 	})
 }
 
@@ -90,12 +96,12 @@ func (k *Kitchen) editMessageReplyMarkup(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) bool {
+	return k.applyEdit(p, func(m *models.Message) error {
 		if sameMarkup(m.ReplyMarkup, markup) {
-			return false
+			return errNotModified
 		}
 		m.ReplyMarkup = markup
-		return true
+		return nil
 	})
 }
 
@@ -130,7 +136,7 @@ func (k *Kitchen) answerCallbackQuery(p params) (any, error) {
 	return true, nil
 }
 
-func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) bool) (any, error) {
+func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) error) (any, error) {
 	chatID, err := p.chatID()
 	if err != nil {
 		return nil, err
@@ -140,12 +146,12 @@ func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) bool) (any, e
 		return nil, err
 	}
 
-	m, changed, ok := k.world.edit(chatID, messageID, mutate)
-	if !ok {
+	m, found, err := k.world.edit(chatID, messageID, mutate)
+	if !found {
 		return nil, requestError("message to edit not found")
 	}
-	if !changed {
-		return nil, errNotModified
+	if err != nil {
+		return nil, err
 	}
 	return m, nil
 }

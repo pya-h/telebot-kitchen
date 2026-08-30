@@ -24,9 +24,10 @@ func WithLanguage(code string) UserOption {
 
 // User is a virtual person talking to the bot through the kitchen.
 type User struct {
-	kitchen *Kitchen
-	info    models.User
-	chatID  int64
+	kitchen  *Kitchen
+	info     models.User
+	chatID   int64
+	awaiting int
 }
 
 // User returns the virtual user with this id, creating them on first mention.
@@ -70,9 +71,17 @@ func (u *User) SendCommand(name string, args ...string) {
 // Tap presses an inline button by its visible label or its callback data.
 func (u *User) Tap(labelOrData string) {
 	screens := u.kitchen.world.keyboards(u.chatID, u.kitchen.reach())
+	if len(screens) == 0 {
+		u.kitchen.tb.Errorf("kitchen: user %d has no buttons on screen, so %q cannot be tapped", u.ID(), labelOrData)
+		return
+	}
+
+	var reachable [][]Button
 	for _, screen := range screens {
-		button, ok := findButton(buttonsOf(screen.ReplyMarkup), labelOrData)
+		rows := buttonsOf(screen.ReplyMarkup)
+		button, ok := findButton(rows, labelOrData)
 		if !ok {
+			reachable = append(reachable, rows...)
 			continue
 		}
 		if button.Data == "" {
@@ -83,14 +92,12 @@ func (u *User) Tap(labelOrData string) {
 		return
 	}
 
-	if len(screens) == 0 {
-		u.kitchen.tb.Errorf("kitchen: user %d has no buttons on screen, so %q cannot be tapped", u.ID(), labelOrData)
-		return
-	}
-	u.kitchen.tb.Errorf("kitchen: user %d has no button %q on screen, found: %s", u.ID(), labelOrData, buttonLabels(buttonsOf(screens[0].ReplyMarkup)))
+	u.kitchen.tb.Errorf("kitchen: user %d has no button %q on screen, found: %s", u.ID(), labelOrData, buttonLabels(reachable))
 }
 
 func (u *User) press(screen models.Message, button Button) {
+	u.awaitFromNow()
+
 	sender := u.identity()
 	u.kitchen.deliver(models.Update{CallbackQuery: &models.CallbackQuery{
 		ID:   u.kitchen.world.nextQuery(),
@@ -118,6 +125,7 @@ func (u *User) say(m models.Message) {
 	m.From = &sender
 
 	sent := u.kitchen.world.add(u.chatID, m)
+	u.awaiting = sent.ID
 	u.kitchen.deliver(models.Update{Message: &sent})
 }
 

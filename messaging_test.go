@@ -201,6 +201,42 @@ func TestEditMessageReplyMarkupKeepsText(t *testing.T) {
 	}
 }
 
+func TestEditTextRejectsAPhotoMessage(t *testing.T) {
+	b := newClient(t, New(t))
+
+	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
+		ChatID:  testChatID,
+		Photo:   &models.InputFileString{Data: "file-1"},
+		Caption: "before",
+	})
+	if err != nil {
+		t.Fatalf("SendPhoto: %v", err)
+	}
+
+	_, err = b.EditMessageText(context.Background(), &bot.EditMessageTextParams{
+		ChatID:    testChatID,
+		MessageID: sent.ID,
+		Text:      "after",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no text in the message to edit") {
+		t.Errorf("err = %v, want a photo message to refuse a text edit", err)
+	}
+}
+
+func TestEditCaptionRejectsATextMessage(t *testing.T) {
+	b := newClient(t, New(t))
+	sent := mustSend(t, b, "hello")
+
+	_, err := b.EditMessageCaption(context.Background(), &bot.EditMessageCaptionParams{
+		ChatID:    testChatID,
+		MessageID: sent.ID,
+		Caption:   "after",
+	})
+	if err == nil || !strings.Contains(err.Error(), "no caption in the message to edit") {
+		t.Errorf("err = %v, want a text message to refuse a caption edit", err)
+	}
+}
+
 func TestEditMissingMessage(t *testing.T) {
 	k := New(t)
 	reply := callJSON(t, k, "editMessageText", `{"chat_id":1,"message_id":7,"text":"hi"}`)

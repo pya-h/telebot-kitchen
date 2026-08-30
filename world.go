@@ -88,21 +88,21 @@ func (w *world) find(chatID int64, messageID int) *models.Message {
 	return nil
 }
 
-// edit reports ok when the message exists and changed when mutate found
-// anything to alter; an edit that changes nothing is an error to Telegram.
-func (w *world) edit(chatID int64, messageID int, mutate func(*models.Message) bool) (edited models.Message, changed, ok bool) {
+// edit reports whether the message exists; mutate returns the error Telegram
+// would raise, so an edit that changes nothing rejects the same way.
+func (w *world) edit(chatID int64, messageID int, mutate func(*models.Message) error) (edited models.Message, found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
 	m := w.find(chatID, messageID)
 	if m == nil {
-		return models.Message{}, false, false
+		return models.Message{}, false, nil
 	}
-	if !mutate(m) {
-		return *m, false, true
+	if err := mutate(m); err != nil {
+		return *m, true, err
 	}
 	m.EditDate = int(w.clock.Now().Unix())
-	return *m, true, true
+	return *m, true, nil
 }
 
 func (w *world) remove(chatID int64, messageID int) bool {

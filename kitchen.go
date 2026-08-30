@@ -32,6 +32,9 @@ type Kitchen struct {
 	world      *world
 	files      *mediaStore
 	callbacks  *callbackLog
+	activity   *activity
+
+	waitTimeout time.Duration
 
 	deliverMu sync.Mutex
 
@@ -55,18 +58,23 @@ func WithBotUsername(username string) Option {
 
 func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now = t } }
 
-// WithScrollback lets a user tap buttons on older messages, Without it only the newest keyboard answers a tap.
+// WithWaitTimeout caps how long the await primitives block before failing.
+func WithWaitTimeout(d time.Duration) Option { return func(k *Kitchen) { k.waitTimeout = d } }
+
+// WithScrollback lets a tap reach buttons on older messages, Without it only the newest keyboard answers
 func WithScrollback() Option { return func(k *Kitchen) { k.scrollback = true } }
 
 func New(tb TB, opts ...Option) *Kitchen {
 	k := &Kitchen{
-		tb:        tb,
-		token:     defaultToken,
-		clock:     &Clock{now: defaultStartTime},
-		files:     newMediaStore(),
-		callbacks: newCallbackLog(),
-		users:     map[int64]*User{},
-		bot:       models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
+		tb:          tb,
+		token:       defaultToken,
+		clock:       &Clock{now: defaultStartTime},
+		files:       newMediaStore(),
+		callbacks:   newCallbackLog(),
+		activity:    newActivity(),
+		waitTimeout: defaultWaitTimeout,
+		users:       map[int64]*User{},
+		bot:         models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
 	}
 	for _, opt := range opts {
 		opt(k)
