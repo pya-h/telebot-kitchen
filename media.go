@@ -9,7 +9,10 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const defaultPhotoDimension = 512
+// Telegram sends a ladder of thumbnails, largest last, and bot code picks the
+// one it wants by position. The kitchen never decodes the bytes, so the entries
+// are square placeholders that all address the one file the store holds.
+var photoLadder = []int{90, 320, 800}
 
 type File struct {
 	ID       string
@@ -69,11 +72,15 @@ func (s *mediaStore) photoSizes(fileID string) []models.PhotoSize {
 	if !ok {
 		f = File{ID: fileID, UniqueID: "unique-" + fileID}
 	}
-	return []models.PhotoSize{{
-		FileID:       f.ID,
-		FileUniqueID: f.UniqueID,
-		Width:        defaultPhotoDimension,
-		Height:       defaultPhotoDimension,
-		FileSize:     len(f.Data),
-	}}
+	sizes := make([]models.PhotoSize, len(photoLadder))
+	for i, dimension := range photoLadder {
+		sizes[i] = models.PhotoSize{
+			FileID:       f.ID,
+			FileUniqueID: f.UniqueID,
+			Width:        dimension,
+			Height:       dimension,
+			FileSize:     len(f.Data),
+		}
+	}
+	return sizes
 }

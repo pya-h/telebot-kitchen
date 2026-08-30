@@ -121,3 +121,42 @@ func syncBot(t *testing.T, k *Kitchen, handler bot.HandlerFunc) *bot.Bot {
 	}
 	return b
 }
+
+func TestSendPhotoOffersTheLargestLast(t *testing.T) {
+	k := New(t)
+	var got *models.Message
+	k.DeliverTo(func(_ context.Context, u *models.Update) { got = u.Message })
+
+	data := []byte("jpeg-bytes")
+	k.User(7).SendPhoto("selfie.jpg", data, "look")
+
+	if len(got.Photo) < 2 {
+		t.Fatalf("photo = %+v, want a size ladder", got.Photo)
+	}
+	largest := got.Photo[len(got.Photo)-1]
+	for _, size := range got.Photo[:len(got.Photo)-1] {
+		if size.Width >= largest.Width {
+			t.Errorf("size %+v is not smaller than the last one %+v", size, largest)
+		}
+	}
+	if got.Caption != "look" {
+		t.Errorf("caption = %q, want the one sent", got.Caption)
+	}
+
+	file, ok := k.File(largest.FileID)
+	if !ok || string(file.Data) != string(data) {
+		t.Errorf("file = %+v, %v; want the uploaded bytes addressable by the largest size", file, ok)
+	}
+}
+
+func TestShareLocation(t *testing.T) {
+	k := New(t)
+	var got *models.Message
+	k.DeliverTo(func(_ context.Context, u *models.Update) { got = u.Message })
+
+	k.User(7).ShareLocation(35.6892, 51.389)
+
+	if got.Location == nil || got.Location.Latitude != 35.6892 || got.Location.Longitude != 51.389 {
+		t.Errorf("location = %+v, want the shared coordinates", got.Location)
+	}
+}

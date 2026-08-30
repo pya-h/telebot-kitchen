@@ -67,6 +67,52 @@ func (u *User) SendCommand(name string, args ...string) {
 	u.Send(text)
 }
 
+// Tap presses an inline button by its visible label or its callback data.
+func (u *User) Tap(labelOrData string) {
+	screens := u.kitchen.world.keyboards(u.chatID, u.kitchen.reach())
+	for _, screen := range screens {
+		button, ok := findButton(screen.ReplyMarkup, labelOrData)
+		if !ok {
+			continue
+		}
+		if button.CallbackData == "" {
+			u.kitchen.tb.Errorf("kitchen: button %q sends no callback data, so tapping it does not reach the bot", labelOrData)
+			return
+		}
+		u.press(screen, button)
+		return
+	}
+
+	if len(screens) == 0 {
+		u.kitchen.tb.Errorf("kitchen: user %d has no buttons on screen, so %q cannot be tapped", u.ID(), labelOrData)
+		return
+	}
+	u.kitchen.tb.Errorf("kitchen: user %d has no button %q on screen, found: %s", u.ID(), labelOrData, buttonLabels(screens[0].ReplyMarkup))
+}
+
+func (u *User) press(screen models.Message, button models.InlineKeyboardButton) {
+	sender := u.identity()
+	u.kitchen.deliver(models.Update{CallbackQuery: &models.CallbackQuery{
+		ID:   u.kitchen.world.nextQuery(),
+		From: sender,
+		Message: models.MaybeInaccessibleMessage{
+			Type:    models.MaybeInaccessibleMessageTypeMessage,
+			Message: &screen,
+		},
+		ChatInstance: fmt.Sprintf("chat-%d", u.chatID),
+		Data:         button.CallbackData,
+	}})
+}
+
+func (u *User) SendPhoto(name string, data []byte, caption string) {
+	f := u.kitchen.files.add(name, data)
+	u.say(models.Message{Photo: u.kitchen.files.photoSizes(f.ID), Caption: caption})
+}
+
+func (u *User) ShareLocation(latitude, longitude float64) {
+	u.say(models.Message{Location: &models.Location{Latitude: latitude, Longitude: longitude}})
+}
+
 func (u *User) say(m models.Message) {
 	sender := u.identity()
 	m.From = &sender

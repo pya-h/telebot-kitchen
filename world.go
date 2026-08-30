@@ -1,6 +1,7 @@
 package kitchen
 
 import (
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -20,6 +21,7 @@ type world struct {
 	chats map[int64]*chat
 
 	nextUpdateID atomic.Int64
+	nextQueryID  atomic.Int64
 }
 
 func newWorld(clock *Clock) *world {
@@ -27,6 +29,8 @@ func newWorld(clock *Clock) *world {
 }
 
 func (w *world) nextUpdate() int64 { return w.nextUpdateID.Add(1) }
+
+func (w *world) nextQuery() string { return "query-" + strconv.FormatInt(w.nextQueryID.Add(1), 10) }
 
 func (w *world) chatAt(id int64) *chat {
 	c, ok := w.chats[id]
@@ -116,6 +120,29 @@ func (w *world) remove(chatID int64, messageID int) bool {
 		}
 	}
 	return false
+}
+
+// keyboards returns the chat's messages that still carry an inline keyboard,
+// newest first; at most limit of them, or every one when limit is zero.
+func (w *world) keyboards(chatID int64, limit int) []models.Message {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return nil
+	}
+	var screens []models.Message
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if c.messages[i].ReplyMarkup == nil {
+			continue
+		}
+		screens = append(screens, *c.messages[i])
+		if len(screens) == limit {
+			break
+		}
+	}
+	return screens
 }
 
 func (w *world) latest(chatID int64) (models.Message, bool) {

@@ -24,13 +24,14 @@ type TB interface {
 }
 
 type Kitchen struct {
-	tb        TB
-	token     string
-	server    *httptest.Server
-	clock     *Clock
-	world     *world
-	files     *mediaStore
-	callbacks *callbackLog
+	tb         TB
+	token      string
+	scrollback bool
+	server     *httptest.Server
+	clock      *Clock
+	world      *world
+	files      *mediaStore
+	callbacks  *callbackLog
 
 	deliverMu sync.Mutex
 
@@ -53,6 +54,9 @@ func WithBotUsername(username string) Option {
 }
 
 func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now = t } }
+
+// WithScrollback lets a user tap buttons on older messages, Without it only the newest keyboard answers a tap.
+func WithScrollback() Option { return func(k *Kitchen) { k.scrollback = true } }
 
 func New(tb TB, opts ...Option) *Kitchen {
 	k := &Kitchen{
@@ -89,6 +93,14 @@ func (k *Kitchen) CallbackAnswer(queryID string) (CallbackAnswer, bool) {
 }
 
 func (k *Kitchen) CallbackAnswers() []CallbackAnswer { return k.callbacks.all() }
+
+// How many of the chat's keyboards a tap may reach; zero means every one.
+func (k *Kitchen) reach() int {
+	if k.scrollback {
+		return 0
+	}
+	return 1
+}
 
 func botIDFrom(token string) int64 {
 	id, err := strconv.ParseInt(strings.SplitN(token, ":", 2)[0], 10, 64)
