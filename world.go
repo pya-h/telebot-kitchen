@@ -37,6 +37,15 @@ func (w *world) chatAt(id int64) *chat {
 	return c
 }
 
+// A private chat mirrors the identity of the user it belongs to.
+func (w *world) join(u models.User) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c := w.chatAt(u.ID)
+	c.info.FirstName, c.info.LastName, c.info.Username = u.FirstName, u.LastName, u.Username
+}
+
 func (w *world) add(chatID int64, m models.Message) models.Message {
 	w.mu.Lock()
 	defer w.mu.Unlock()

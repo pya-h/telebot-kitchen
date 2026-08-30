@@ -39,6 +39,7 @@ type Kitchen struct {
 	webhook webhook
 	process UpdateProcessor
 	hook    http.Handler
+	users   map[int64]*User
 }
 
 type Option func(*Kitchen)
@@ -60,6 +61,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		clock:     &Clock{now: defaultStartTime},
 		files:     newMediaStore(),
 		callbacks: newCallbackLog(),
+		users:     map[int64]*User{},
 		bot:       models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
 	}
 	for _, opt := range opts {
