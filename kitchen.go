@@ -32,9 +32,13 @@ type Kitchen struct {
 	files     *mediaStore
 	callbacks *callbackLog
 
+	deliverMu sync.Mutex
+
 	mu      sync.RWMutex
 	bot     models.User
 	webhook webhook
+	process UpdateProcessor
+	hook    http.Handler
 }
 
 type Option func(*Kitchen)
