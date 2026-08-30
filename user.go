@@ -71,11 +71,11 @@ func (u *User) SendCommand(name string, args ...string) {
 func (u *User) Tap(labelOrData string) {
 	screens := u.kitchen.world.keyboards(u.chatID, u.kitchen.reach())
 	for _, screen := range screens {
-		button, ok := findButton(screen.ReplyMarkup, labelOrData)
+		button, ok := findButton(buttonsOf(screen.ReplyMarkup), labelOrData)
 		if !ok {
 			continue
 		}
-		if button.CallbackData == "" {
+		if button.Data == "" {
 			u.kitchen.tb.Errorf("kitchen: button %q sends no callback data, so tapping it does not reach the bot", labelOrData)
 			return
 		}
@@ -87,10 +87,10 @@ func (u *User) Tap(labelOrData string) {
 		u.kitchen.tb.Errorf("kitchen: user %d has no buttons on screen, so %q cannot be tapped", u.ID(), labelOrData)
 		return
 	}
-	u.kitchen.tb.Errorf("kitchen: user %d has no button %q on screen, found: %s", u.ID(), labelOrData, buttonLabels(screens[0].ReplyMarkup))
+	u.kitchen.tb.Errorf("kitchen: user %d has no button %q on screen, found: %s", u.ID(), labelOrData, buttonLabels(buttonsOf(screens[0].ReplyMarkup)))
 }
 
-func (u *User) press(screen models.Message, button models.InlineKeyboardButton) {
+func (u *User) press(screen models.Message, button Button) {
 	sender := u.identity()
 	u.kitchen.deliver(models.Update{CallbackQuery: &models.CallbackQuery{
 		ID:   u.kitchen.world.nextQuery(),
@@ -100,7 +100,7 @@ func (u *User) press(screen models.Message, button models.InlineKeyboardButton) 
 			Message: &screen,
 		},
 		ChatInstance: fmt.Sprintf("chat-%d", u.chatID),
-		Data:         button.CallbackData,
+		Data:         button.Data,
 	}})
 }
 
