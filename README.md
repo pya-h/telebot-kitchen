@@ -13,7 +13,7 @@ deterministic Go test.
 ```go
 k := kitchen.New(t)                       // an in-process fake Telegram
 bot := newYourBot(k.APIURL())             // point your bot's API base at the kitchen
-k.Deliver(bot.WebhookHandler())           // let the kitchen hand updates to your bot
+k.DeliverToWebhook(bot.WebhookHandler())  // let the kitchen hand updates to your bot
 
 alice := k.User(101)
 alice.Send("/start")

@@ -63,6 +63,28 @@ func TestSendCommandAcceptsALeadingSlash(t *testing.T) {
 	}
 }
 
+// A user typing a command into their client gets the same message as one asking
+// for it by name, so a test may write either.
+func TestTypedCommandIsRecognized(t *testing.T) {
+	cases := map[string]int{
+		"/start":            6,
+		"/start deep-link":  6,
+		"/settings@the_bot": 17,
+	}
+	for text, want := range cases {
+		got := commandEntities(text)
+		if len(got) != 1 || got[0].Length != want || got[0].Type != models.MessageEntityTypeBotCommand {
+			t.Errorf("commandEntities(%q) = %+v, want one of length %d", text, got, want)
+		}
+	}
+
+	for _, text := range []string{"hello", "and/or", "/ start", "/"} {
+		if got := commandEntities(text); got != nil {
+			t.Errorf("commandEntities(%q) = %+v, want no command", text, got)
+		}
+	}
+}
+
 // Telegram counts entity lengths in UTF-16 code units, not bytes or runes.
 func TestEntityLengthCountsUTF16(t *testing.T) {
 	cases := map[string]int{
