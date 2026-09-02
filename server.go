@@ -106,6 +106,7 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 	}
 
 	result, err := handler(k, p)
+	k.calls.record(newCall(method, p, err))
 	k.activity.note()
 	if err != nil {
 		writeError(w, err)

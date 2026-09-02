@@ -32,6 +32,7 @@ type Kitchen struct {
 	world      *world
 	files      *mediaStore
 	callbacks  *callbackLog
+	calls      *recorder
 	activity   *activity
 
 	waitTimeout time.Duration
@@ -71,6 +72,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		clock:       &Clock{now: defaultStartTime},
 		files:       newMediaStore(),
 		callbacks:   newCallbackLog(),
+		calls:       newRecorder(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,
 		users:       map[int64]*User{},
