@@ -5,14 +5,19 @@ import "strings"
 // String renders the message the way a client shows it: the text, then the
 // keyboard a row to a line.
 func (m Message) String() string {
-	var out strings.Builder
-	if m.Media != "" {
-		out.WriteString("(" + m.Media + ")")
-		if m.Text != "" {
-			out.WriteString(" ")
-		}
+	var parts []string
+	if m.ForwardedFrom != "" {
+		parts = append(parts, "(forwarded from "+m.ForwardedFrom+")")
 	}
-	out.WriteString(m.Text)
+	if m.Media != "" {
+		parts = append(parts, "("+m.Media+")")
+	}
+	if m.Text != "" {
+		parts = append(parts, m.Text)
+	}
+
+	var out strings.Builder
+	out.WriteString(strings.Join(parts, " "))
 
 	for _, row := range m.Keyboard {
 		out.WriteString("\n")

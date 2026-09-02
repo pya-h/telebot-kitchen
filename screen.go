@@ -7,23 +7,22 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Button is one inline keyboard button as the user sees it.
 type Button struct {
 	Label string
 	Data  string
 	URL   string
 }
 
-// Message is a chat entry as a test reads it, either side's.
 type Message struct {
-	ID       int
-	ChatID   int64
-	Text     string
-	From     string
-	FromBot  bool
-	Media    string
-	Sent     time.Time
-	Keyboard [][]Button
+	ID            int
+	ChatID        int64
+	Text          string
+	From          string
+	FromBot       bool
+	ForwardedFrom string
+	Media         string
+	Sent          time.Time
+	Keyboard      [][]Button
 }
 
 // Screen is what the user has at the top of their chat right now.
@@ -74,7 +73,6 @@ func (k *Kitchen) History(chatID int64) []Message {
 }
 
 func (k *Kitchen) view(m models.Message) Message {
-	// Telegram never sets both, so a caption reads as the message's text.
 	text := m.Text
 	if text == "" {
 		text = m.Caption
@@ -89,15 +87,23 @@ func (k *Kitchen) view(m models.Message) Message {
 	}
 
 	return Message{
-		ID:       m.ID,
-		ChatID:   m.Chat.ID,
-		Text:     text,
-		From:     displayName(m.From),
-		FromBot:  m.From != nil && m.From.ID == k.botUser().ID,
-		Media:    media,
-		Sent:     time.Unix(int64(m.Date), 0).UTC(),
-		Keyboard: buttonsOf(m.ReplyMarkup),
+		ID:            m.ID,
+		ChatID:        m.Chat.ID,
+		Text:          text,
+		From:          displayName(m.From),
+		FromBot:       m.From != nil && m.From.ID == k.botUser().ID,
+		ForwardedFrom: forwardedFrom(m.ForwardOrigin),
+		Media:         media,
+		Sent:          time.Unix(int64(m.Date), 0).UTC(),
+		Keyboard:      buttonsOf(m.ReplyMarkup),
 	}
+}
+
+func forwardedFrom(o *models.MessageOrigin) string {
+	if o == nil || o.MessageOriginUser == nil {
+		return ""
+	}
+	return displayName(&o.MessageOriginUser.SenderUser)
 }
 
 func displayName(u *models.User) string {

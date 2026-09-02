@@ -24,6 +24,8 @@ var apiMethods = map[string]apiMethod{
 	"getWebhookInfo":         (*Kitchen).getWebhookInfo,
 	"sendMessage":            (*Kitchen).sendMessage,
 	"sendPhoto":              (*Kitchen).sendPhoto,
+	"forwardMessage":         (*Kitchen).forwardMessage,
+	"copyMessage":            (*Kitchen).copyMessage,
 	"editMessageText":        (*Kitchen).editMessageText,
 	"editMessageCaption":     (*Kitchen).editMessageCaption,
 	"editMessageReplyMarkup": (*Kitchen).editMessageReplyMarkup,
@@ -41,10 +43,14 @@ func (p params) decode(name string, dst any) error {
 	return json.Unmarshal([]byte(raw), dst)
 }
 
-func (p params) chatID() (int64, error) {
-	id, err := strconv.ParseInt(p["chat_id"], 10, 64)
+func (p params) chatID() (int64, error) { return p.chat("chat_id") }
+
+func (p params) fromChatID() (int64, error) { return p.chat("from_chat_id") }
+
+func (p params) chat(name string) (int64, error) {
+	id, err := strconv.ParseInt(p[name], 10, 64)
 	if err != nil {
-		return 0, badRequest("chat_id")
+		return 0, badRequest(name)
 	}
 	return id, nil
 }
