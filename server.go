@@ -47,9 +47,11 @@ func (p params) chatID() (int64, error) { return p.chat("chat_id") }
 
 func (p params) fromChatID() (int64, error) { return p.chat("from_chat_id") }
 
+// A zero id is an unset one, and Telegram has no chat there either: refusing it
+// keeps a bot that forgets to fill the field from passing.
 func (p params) chat(name string) (int64, error) {
 	id, err := strconv.ParseInt(p[name], 10, 64)
-	if err != nil {
+	if err != nil || id == 0 {
 		return 0, badRequest(name)
 	}
 	return id, nil
@@ -109,25 +111,35 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 
 	handler, ok := apiMethods[method]
 	if !ok {
-		k.tb.Errorf("kitchen: unsupported Bot API method %q", method)
+		k.reportUnsupported(method)
 		writeError(w, &apiError{Code: http.StatusNotFound, Description: "Not Found: method not found"})
 		return
 	}
 
+	call := newCall(method, p)
 	// Injected before dispatch: a call Telegram refuses never reaches the world.
-	if fault, refused := k.faults.pick(newCall(method, p, nil).subject()); refused {
-		k.calls.record(newCall(method, p, fault))
+	if fault, refused := k.faults.pick(call); refused {
+		k.calls.record(call.rejected(fault))
 		fault.serve(w)
 		return
 	}
 
 	result, err := handler(k, p)
-	k.calls.record(newCall(method, p, err))
 	if err != nil {
+		k.calls.record(call.rejected(err))
 		writeError(w, err)
 		return
 	}
+	k.calls.record(call)
 	writeResult(w, result)
+}
+
+// Reported once per method: a bot that polls would otherwise bury the gap under
+// thousands of copies of it.
+func (k *Kitchen) reportUnsupported(method string) {
+	if _, seen := k.unsupported.LoadOrStore(method, struct{}{}); !seen {
+		k.tb.Errorf("kitchen: unsupported Bot API method %q", method)
+	}
 }
 
 func route(path string) (token, method string, ok bool) {

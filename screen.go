@@ -52,7 +52,7 @@ func (m Message) subject() subject {
 	return subject{chatID: m.ChatID, text: m.Text, keyboard: m.Keyboard}
 }
 
-// Screen is the newest message in the user's chat, which may be their own.
+// Screen returns the newest message in the chat, which may be the user's own.
 func (u *User) Screen() Screen {
 	m, ok := u.kitchen.world.latest(u.chatID)
 	if !ok {

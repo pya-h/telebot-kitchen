@@ -53,9 +53,32 @@ func TestServeReportsUnsupportedMethod(t *testing.T) {
 		t.Error("the refused call left waiters asleep")
 	}
 
+	// However often a bot asks for it, the gap is reported once, so a bot that
+	// polls cannot bury it under thousands of copies.
+	for range 3 {
+		callJSON(t, k, "sendDice", `{"chat_id":1}`)
+	}
 	errs := tb.errors()
 	if len(errs) != 1 || !strings.Contains(errs[0], "sendDice") {
 		t.Errorf("reported errors = %v, want one naming the missing method", errs)
+	}
+
+	callJSON(t, k, "sendPoll", `{"chat_id":1}`)
+	if errs := tb.errors(); len(errs) != 2 {
+		t.Errorf("reported errors = %v, want a second method reported on its own", errs)
+	}
+}
+
+// A bot that leaves chat_id unset has to fail here rather than in production.
+func TestServeRefusesAnUnsetChatID(t *testing.T) {
+	k := New(t)
+
+	reply := callJSON(t, k, "sendMessage", `{"chat_id":0,"text":"hello"}`)
+	if reply.OK || reply.ErrorCode != http.StatusBadRequest {
+		t.Errorf("reply = %+v, want a bad-request error", reply)
+	}
+	if log := k.History(0); len(log) != 0 {
+		t.Errorf("chat 0 holds %d messages, want the refused send to have left none", len(log))
 	}
 }
 

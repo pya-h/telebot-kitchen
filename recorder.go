@@ -121,13 +121,15 @@ func (r *recorder) all() Calls {
 
 func (k *Kitchen) Calls() Calls { return k.calls.all() }
 
-func newCall(method string, p params, err error) Call {
+func newCall(method string, p params) Call {
 	c := Call{Method: method, Params: p}
 	if id, ok := p["chat_id"]; ok {
 		c.ChatID, _ = strconv.ParseInt(id, 10, 64)
 	}
-	if err != nil {
-		c.Error = err.Error()
-	}
+	return c
+}
+
+func (c Call) rejected(err error) Call {
+	c.Error = err.Error()
 	return c
 }

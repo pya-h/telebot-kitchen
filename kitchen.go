@@ -16,7 +16,13 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-const defaultToken = "1000000000:kitchen-test-token"
+const (
+	defaultToken = "1000000000:kitchen-test-token"
+
+	// A bot without an id would read as an unknown sender, so a token the kitchen
+	// cannot take one from falls back to this.
+	fallbackBotID = 1000000000
+)
 
 type TB interface {
 	Cleanup(func())
@@ -36,6 +42,8 @@ type Kitchen struct {
 	calls      *recorder
 	faults     *faultStore
 	activity   *activity
+
+	unsupported sync.Map
 
 	waitTimeout time.Duration
 
@@ -115,10 +123,11 @@ func (k *Kitchen) reach() int {
 	return 1
 }
 
+// Telegram puts the bot's id in front of the colon.
 func botIDFrom(token string) int64 {
 	id, err := strconv.ParseInt(strings.SplitN(token, ":", 2)[0], 10, 64)
-	if err != nil {
-		return 0
+	if err != nil || id <= 0 {
+		return fallbackBotID
 	}
 	return id
 }

@@ -126,10 +126,14 @@ func (s *faultStore) add(f *Failure) *Failure {
 
 // The first standing fault that wants the call gets it, so a narrow fault laid
 // down early is not shadowed by a broad one laid down later.
-func (s *faultStore) pick(call subject) (Fault, bool) {
+func (s *faultStore) pick(c Call) (Fault, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	if len(s.standing) == 0 {
+		return Fault{}, false
+	}
+	call := c.subject()
 	for _, f := range s.standing {
 		if f.fires(call) {
 			return f.fault, true

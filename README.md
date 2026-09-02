@@ -53,7 +53,7 @@ updates by webhook or through a "handle one update" entry point.
   case, not an afterthought.
 - **Tap by what you see** — press inline buttons by visible label or callback
   data; the kitchen finds them on the current screen for you.
-- **Rich input** — text, commands, photos, locations, contacts, and more.
+- **Rich input** — text, commands, photos and locations.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts

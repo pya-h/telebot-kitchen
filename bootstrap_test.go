@@ -20,6 +20,23 @@ func TestGetMeReportsConfiguredIdentity(t *testing.T) {
 	}
 }
 
+// An id of zero would read as an unknown sender, so a token without a readable
+// one still names the bot.
+func TestBotIDComesFromTheToken(t *testing.T) {
+	cases := map[string]int64{
+		"42:secret":     42,
+		defaultToken:    1000000000,
+		"kitchen-token": fallbackBotID,
+		"0:secret":      fallbackBotID,
+		"-7:secret":     fallbackBotID,
+	}
+	for token, want := range cases {
+		if got := botIDFrom(token); got != want {
+			t.Errorf("botIDFrom(%q) = %d, want %d", token, got, want)
+		}
+	}
+}
+
 func TestWebhookLifecycle(t *testing.T) {
 	k := New(t)
 
