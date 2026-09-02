@@ -41,6 +41,16 @@ func (a *activity) watch() <-chan struct{} {
 // WaitFor blocks until cond holds, rechecking every time the bot calls the API
 // or a user speaks. what names the condition in the failure message.
 func (k *Kitchen) WaitFor(what string, cond func() bool) bool {
+	if k.waitFor(cond) {
+		return true
+	}
+	k.tb.Errorf("kitchen: waited %s for %s, which never happened", k.waitTimeout, what)
+	return false
+}
+
+// waitFor leaves the reporting to the caller, which usually knows more about
+// what was wanted than a description can carry.
+func (k *Kitchen) waitFor(cond func() bool) bool {
 	timeout := time.NewTimer(k.waitTimeout)
 	defer timeout.Stop()
 
@@ -52,7 +62,6 @@ func (k *Kitchen) WaitFor(what string, cond func() bool) bool {
 		select {
 		case <-wake:
 		case <-timeout.C:
-			k.tb.Errorf("kitchen: waited %s for %s, which never happened", k.waitTimeout, what)
 			return false
 		}
 	}

@@ -42,10 +42,17 @@ func (u *User) Expect(ms ...Matcher) Message {
 	return reply
 }
 
-// ExpectScreen asserts what the user is looking at right now, without waiting.
+// ExpectScreen waits until the user's screen looks like this, then returns it.
+// A bot that edits its menu in place sends nothing new, so waiting on the screen
+// is the only way to follow it.
 func (u *User) ExpectScreen(ms ...Matcher) Screen {
-	screen := u.Screen()
-	if want := All(ms...); !want.match(screen.subject()) {
+	want := All(ms...)
+
+	var screen Screen
+	if !u.kitchen.waitFor(func() bool {
+		screen = u.Screen()
+		return want.match(screen.subject())
+	}) {
 		u.kitchen.tb.Errorf("kitchen: user %d sees %q with buttons %s, want %s",
 			u.ID(), screen.Text, buttonLabels(screen.Keyboard), want)
 	}
