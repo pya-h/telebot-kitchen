@@ -108,6 +108,13 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Injected before dispatch: a call Telegram refuses never reaches the world.
+	if fault, refused := k.faults.pick(newCall(method, p, nil).subject()); refused {
+		k.calls.record(newCall(method, p, fault))
+		fault.serve(w)
+		return
+	}
+
 	result, err := handler(k, p)
 	k.calls.record(newCall(method, p, err))
 	if err != nil {

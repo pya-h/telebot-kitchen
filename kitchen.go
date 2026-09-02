@@ -34,6 +34,7 @@ type Kitchen struct {
 	files      *mediaStore
 	callbacks  *callbackLog
 	calls      *recorder
+	faults     *faultStore
 	activity   *activity
 
 	waitTimeout time.Duration
@@ -74,6 +75,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		files:       newMediaStore(),
 		callbacks:   newCallbackLog(),
 		calls:       newRecorder(),
+		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,
 		users:       map[int64]*User{},
