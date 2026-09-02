@@ -5,23 +5,33 @@ import (
 	"strings"
 )
 
-// Expect asserts the bot made a call like this and returns the last one that did.
+// Expect waits for the bot to make a call like this and returns the last one
+// that did.
 func (k *Kitchen) Expect(ms ...Matcher) Call {
-	calls := k.Calls()
-	call, ok := calls.Last(ms...)
-	if !ok {
-		k.tb.Errorf("kitchen: no call with %s, the bot made:\n%s", All(ms...), calls)
+	want := All(ms...)
+
+	var call Call
+	if !k.waitFor(func() bool {
+		last, ok := k.Calls().Last(want)
+		call = last
+		return ok
+	}) {
+		k.tb.Errorf("kitchen: no call with %s, the bot made:\n%s", want, k.Calls())
 	}
 	return call
 }
 
+// ExpectNo settles first: a call the bot has not made yet is not a call it never
+// makes. The same goes for ExpectCount.
 func (k *Kitchen) ExpectNo(ms ...Matcher) {
+	k.Settle()
 	if found := k.Calls().Matching(ms...); len(found) > 0 {
 		k.tb.Errorf("kitchen: expected no call with %s, but the bot made:\n%s", All(ms...), found)
 	}
 }
 
 func (k *Kitchen) ExpectCount(n int, ms ...Matcher) {
+	k.Settle()
 	found := k.Calls().Matching(ms...)
 	if len(found) != n {
 		k.tb.Errorf("kitchen: %d calls with %s, want %d:\n%s", len(found), All(ms...), n, found)
@@ -76,7 +86,7 @@ type Step struct {
 func (k *Kitchen) Scenario(steps ...Step) {
 	for i, step := range steps {
 		if k.tb.Failed() {
-			k.tb.Errorf("kitchen: skipped %s, the scenario had already failed", names(steps[i:]))
+			k.tb.Errorf("kitchen: skipped %s, the test had already failed", names(steps[i:]))
 			return
 		}
 		step.Do()

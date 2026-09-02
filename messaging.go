@@ -146,7 +146,13 @@ func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) error) (any, 
 		return nil, err
 	}
 
-	m, found, err := k.world.edit(chatID, messageID, mutate)
+	botID := k.botUser().ID
+	m, found, err := k.world.edit(chatID, messageID, func(m *models.Message) error {
+		if m.From == nil || m.From.ID != botID {
+			return requestError("message can't be edited")
+		}
+		return mutate(m)
+	})
 	if !found {
 		return nil, requestError("message to edit not found")
 	}

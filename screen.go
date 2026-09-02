@@ -17,6 +17,7 @@ type Button struct {
 // Message is a chat entry as a test reads it, either side's.
 type Message struct {
 	ID       int
+	ChatID   int64
 	Text     string
 	From     string
 	FromBot  bool
@@ -49,7 +50,7 @@ func (m Message) Buttons() []Button {
 }
 
 func (m Message) subject() subject {
-	return subject{text: m.Text, keyboard: m.Keyboard}
+	return subject{chatID: m.ChatID, text: m.Text, keyboard: m.Keyboard}
 }
 
 // Screen is the newest message in the user's chat, which may be their own.
@@ -89,6 +90,7 @@ func (k *Kitchen) view(m models.Message) Message {
 
 	return Message{
 		ID:       m.ID,
+		ChatID:   m.Chat.ID,
 		Text:     text,
 		From:     displayName(m.From),
 		FromBot:  m.From != nil && m.From.ID == k.botUser().ID,

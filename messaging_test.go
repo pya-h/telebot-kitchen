@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -234,6 +235,20 @@ func TestEditCaptionRejectsATextMessage(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "no caption in the message to edit") {
 		t.Errorf("err = %v, want a text message to refuse a caption edit", err)
+	}
+}
+
+func TestEditRejectsAUsersMessage(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	user := k.User(testChatID)
+	user.Send("mine")
+
+	reply := callJSON(t, k, "editMessageText",
+		fmt.Sprintf(`{"chat_id":%d,"message_id":%d,"text":"yours"}`, testChatID, user.Screen().ID))
+	if reply.OK || !strings.Contains(reply.Description, "message can't be edited") {
+		t.Errorf("reply = %+v, want the bot refused a message it did not send", reply)
 	}
 }
 

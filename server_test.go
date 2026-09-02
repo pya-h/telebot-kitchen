@@ -39,9 +39,18 @@ func TestServeReportsUnsupportedMethod(t *testing.T) {
 	k := New(tb)
 	defer tb.close()
 
+	wake := k.activity.watch()
 	reply := callJSON(t, k, "sendDice", `{"chat_id":1}`)
 	if reply.OK || reply.ErrorCode != http.StatusNotFound {
 		t.Errorf("reply = %+v, want a not-found error", reply)
+	}
+
+	// A refused call still wakes waiters, so a test fails on its own assertion
+	// rather than on a timeout.
+	select {
+	case <-wake:
+	default:
+		t.Error("the refused call left waiters asleep")
 	}
 
 	errs := tb.errors()

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -34,11 +35,25 @@ func TestExpectFindsTheCall(t *testing.T) {
 	k.ExpectCount(1, Method("sendMessage"))
 }
 
+func TestExpectWaitsForAnAsyncCall(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(asyncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
+		time.Sleep(20 * time.Millisecond)
+		echoHandler(ctx, b, u)
+	}).ProcessUpdate)
+
+	k.User(7).Send("hi")
+
+	if call := k.Expect(Method("sendMessage")); call.Text() != "echo: hi" {
+		t.Errorf("call = %+v, want the echo the handler sent late", call)
+	}
+}
+
 func TestExpectReportsWhatTheBotSentInstead(t *testing.T) {
 	tb := &recordingTB{}
 	defer tb.close()
 
-	k := New(tb)
+	k := New(tb, WithWaitTimeout(30*time.Millisecond))
 	k.DeliverTo(menuBot(t, k, languageMenu...).ProcessUpdate)
 	k.User(7).Send("hi")
 
@@ -56,13 +71,33 @@ func TestExpectReportsWhatTheBotSentInstead(t *testing.T) {
 	}
 }
 
+// Without settling first, an absence assertion would pass merely because the bot
+// had not got round to the call yet.
+func TestExpectNoWaitsForALateCall(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.DeliverTo(asyncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
+		time.Sleep(20 * time.Millisecond)
+		echoHandler(ctx, b, u)
+	}).ProcessUpdate)
+
+	k.User(7).Send("hi")
+	k.ExpectNo(Method("sendMessage"))
+
+	if errs := tb.errors(); len(errs) != 1 {
+		t.Errorf("errors = %v, want the late call caught", errs)
+	}
+}
+
 func TestUserExpectReadsTheReply(t *testing.T) {
 	k := New(t)
 	k.DeliverTo(menuBot(t, k, languageMenu...).ProcessUpdate)
 
 	user := k.User(7)
 	user.Send("hi")
-	user.Expect(TextIs("menu"), HasButton("lang:fa"))
+	user.Expect(TextIs("menu"), HasButton("lang:fa"), ToUser(user))
 
 	user.Tap("English")
 	user.Expect(TextContains("lang:en"))

@@ -61,8 +61,7 @@ updates by webhook or long-polling.
 
 ## Status
 
-Early, active development. Work is organized in two phases (see
-[.stuff/MODEL.md](.stuff/MODEL.md) for the full design):
+Early, active development. Work is organized in two phases:
 
 - **Phase A — core.** The engine, virtual users, the messaging and callback
   surface, screen rendering, fault injection, and the tooling that makes tests

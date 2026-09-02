@@ -23,6 +23,7 @@ type Matcher struct {
 
 func (m Matcher) String() string { return m.what }
 
+// Method only ever matches a call, never a message on screen.
 func Method(name string) Matcher {
 	return Matcher{"method " + name, func(s subject) bool { return s.method == name }}
 }
@@ -50,7 +51,8 @@ func HasButton(labelOrData string) Matcher {
 	}}
 }
 
-// Param reaches parameters the named matchers do not cover.
+// Param reaches call parameters the named matchers do not cover; like Method it
+// never matches a message.
 func Param(name, value string) Matcher {
 	return Matcher{fmt.Sprintf("%s=%q", name, value), func(s subject) bool {
 		return s.params[name] == value

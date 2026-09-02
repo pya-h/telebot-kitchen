@@ -82,6 +82,9 @@ func (p params) number(name string) int {
 }
 
 func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
+	// Even a call the kitchen turns away is progress a waiter may be watching for.
+	defer k.activity.note()
+
 	token, method, ok := route(r.URL.Path)
 	if !ok {
 		writeError(w, &apiError{Code: http.StatusNotFound, Description: "Not Found"})
@@ -107,7 +110,6 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 
 	result, err := handler(k, p)
 	k.calls.record(newCall(method, p, err))
-	k.activity.note()
 	if err != nil {
 		writeError(w, err)
 		return
