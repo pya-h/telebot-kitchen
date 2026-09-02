@@ -24,6 +24,9 @@ reply := alice.ExpectReply()              // wait for the answer, never sleep
 require.Contains(t, reply.Text, "Welcome")
 ```
 
+A full walkthrough — every verb, waiting instead of sleeping, scenarios, golden
+transcripts and fault injection — is in [USAGE.md](USAGE.md).
+
 ## How it works
 
 Every Go Telegram library talks to Telegram over the same HTTP API and can be
@@ -34,12 +37,13 @@ pointed at a custom base URL. telebot-kitchen stands up that API in-process:
   updates an in-memory model of every chat, records the call, and returns a
   valid response — so your bot behaves exactly as it would in production.
 - **Inbound** (user → bot): the kitchen injects updates the way Telegram would,
-  either by posting to your webhook handler or by answering long-poll
-  `getUpdates`. You never hand-craft an `Update`; you say `user.Tap("Next")`.
+  either by posting to your webhook handler or by handing it straight to your
+  update entry point. You never hand-craft an `Update`; you say
+  `user.Tap("Next")`.
 
 Because the seam is the HTTP protocol, the kitchen is **library-agnostic** — it
-works with any Go bot library that can target a custom server URL and receives
-updates by webhook or long-polling.
+works with any Go bot library that can target a custom server URL and takes its
+updates by webhook or through a "handle one update" entry point.
 
 ## What you can do with it
 
