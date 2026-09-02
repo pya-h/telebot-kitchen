@@ -1,6 +1,7 @@
 package example
 
 import (
+	"path/filepath"
 	"testing"
 
 	kitchen "github.com/pya-h/telebot-kitchen"
@@ -11,7 +12,7 @@ import (
 func start(t *testing.T) (*kitchen.Kitchen, *kitchen.User) {
 	t.Helper()
 
-	k := kitchen.New(t)
+	k := kitchen.New(t, kitchen.WithBotName("Settings Bot"))
 	b, err := New(k.APIURL(), k.Token())
 	if err != nil {
 		t.Fatalf("build the bot: %v", err)
@@ -106,4 +107,25 @@ func TestTheMenuIsEditedRatherThanResent(t *testing.T) {
 	if log := ada.History(); len(log) != 2 {
 		t.Errorf("history = %d entries, want the command and the one menu", len(log))
 	}
+}
+
+// The chat as a reader would see it at the end. Because the menu is edited in
+// place, the transcript shows where it landed, not every version it passed
+// through. Rerun with -kitchen.update after changing any wording.
+func TestTheWholeConversationReads(t *testing.T) {
+	_, ada := start(t)
+
+	ada.SendCommand("start")
+	ada.Expect(kitchen.HasButton("English"))
+
+	ada.Tap("English")
+	ada.ExpectScreen(kitchen.HasButton("Done"))
+
+	ada.Tap("Turn notifications on")
+	ada.ExpectScreen(kitchen.TextContains("notifications on"))
+
+	ada.Tap("Done")
+	ada.ExpectScreen(kitchen.TextContains("All set"))
+
+	ada.ExpectTranscript(filepath.Join("testdata", "settings.md"))
 }

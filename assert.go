@@ -36,8 +36,7 @@ func (u *User) Expect(ms ...Matcher) Message {
 		return reply
 	}
 	if want := All(ms...); !want.match(reply.subject()) {
-		u.kitchen.tb.Errorf("kitchen: user %d was told %q with buttons %s, want %s",
-			u.ID(), reply.Text, buttonLabels(reply.Keyboard), want)
+		u.kitchen.tb.Errorf("kitchen: user %d was told:\n%s\nwant %s", u.ID(), reply, want)
 	}
 	return reply
 }
@@ -53,8 +52,7 @@ func (u *User) ExpectScreen(ms ...Matcher) Screen {
 		screen = u.Screen()
 		return want.match(screen.subject())
 	}) {
-		u.kitchen.tb.Errorf("kitchen: user %d sees %q with buttons %s, want %s",
-			u.ID(), screen.Text, buttonLabels(screen.Keyboard), want)
+		u.kitchen.tb.Errorf("kitchen: user %d sees:\n%s\nwant %s", u.ID(), screen, want)
 	}
 	return screen
 }
@@ -64,7 +62,7 @@ func (u *User) ExpectScreen(ms ...Matcher) Screen {
 func (u *User) ExpectNothingMore() {
 	u.kitchen.Settle()
 	if extra, ok := u.peekReply(); ok {
-		u.kitchen.tb.Errorf("kitchen: user %d was also told %q, which no assertion expected", u.ID(), extra.Text)
+		u.kitchen.tb.Errorf("kitchen: user %d was also told %q, which no assertion expected", u.ID(), extra)
 	}
 }
 

@@ -1,6 +1,7 @@
 package kitchen
 
 import (
+	"strings"
 	"time"
 
 	"github.com/go-telegram/bot/models"
@@ -17,7 +18,9 @@ type Button struct {
 type Message struct {
 	ID       int
 	Text     string
+	From     string
 	FromBot  bool
+	Media    string
 	Sent     time.Time
 	Keyboard [][]Button
 }
@@ -76,11 +79,28 @@ func (k *Kitchen) view(m models.Message) Message {
 		text = m.Caption
 	}
 
+	media := ""
+	switch {
+	case len(m.Photo) > 0:
+		media = "photo"
+	case m.Location != nil:
+		media = "location"
+	}
+
 	return Message{
 		ID:       m.ID,
 		Text:     text,
+		From:     displayName(m.From),
 		FromBot:  m.From != nil && m.From.ID == k.botUser().ID,
+		Media:    media,
 		Sent:     time.Unix(int64(m.Date), 0).UTC(),
 		Keyboard: buttonsOf(m.ReplyMarkup),
 	}
+}
+
+func displayName(u *models.User) string {
+	if u == nil {
+		return ""
+	}
+	return strings.TrimSpace(u.FirstName + " " + u.LastName)
 }
