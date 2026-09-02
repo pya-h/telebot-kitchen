@@ -21,6 +21,7 @@ const defaultToken = "1000000000:kitchen-test-token"
 type TB interface {
 	Cleanup(func())
 	Errorf(format string, args ...any)
+	Failed() bool
 }
 
 type Kitchen struct {
@@ -62,7 +63,7 @@ func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now =
 // WithWaitTimeout caps how long the await primitives block before failing.
 func WithWaitTimeout(d time.Duration) Option { return func(k *Kitchen) { k.waitTimeout = d } }
 
-// WithScrollback lets a tap reach buttons on older messages, Without it only the newest keyboard answers
+// WithScrollback lets a tap reach buttons on older messages; without it only the newest keyboard answers.
 func WithScrollback() Option { return func(k *Kitchen) { k.scrollback = true } }
 
 func New(tb TB, opts ...Option) *Kitchen {

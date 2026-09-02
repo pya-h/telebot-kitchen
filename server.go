@@ -147,8 +147,7 @@ func (k *Kitchen) parseParams(r *http.Request) (params, error) {
 				p[name] = values[0]
 			}
 		}
-		// An upload is stored and then read as the file id it was issued, so a
-		// method sees one shape whether the bot sent bytes or an existing id.
+		// Stored as a file id, so a method sees one shape for bytes and ids alike.
 		for name, headers := range r.MultipartForm.File {
 			if len(headers) == 0 {
 				continue

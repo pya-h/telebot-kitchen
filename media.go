@@ -9,9 +9,8 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Telegram sends a ladder of thumbnails, largest last, and bot code picks the
-// one it wants by position. The kitchen never decodes the bytes, so the entries
-// are square placeholders that all address the one file the store holds.
+// Telegram sends a ladder of thumbnails, largest last. The kitchen never decodes
+// the bytes, so these are placeholders addressing the one file it holds.
 var photoLadder = []int{90, 320, 800}
 
 type File struct {
@@ -65,8 +64,7 @@ func (s *mediaStore) get(id string) (File, bool) {
 	return f, ok
 }
 
-// A file id the store never issued is one the bot re-sent from an earlier
-// message, so it stays addressable even though the bytes are unknown here.
+// A file id the store never issued is one the bot re-sent, so it stays addressable.
 func (s *mediaStore) photoSizes(fileID string) []models.PhotoSize {
 	f, ok := s.get(fileID)
 	if !ok {

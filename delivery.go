@@ -73,7 +73,7 @@ func (k *Kitchen) post(handler http.Handler, registered webhook, u models.Update
 
 	req := httptest.NewRequest(http.MethodPost, url, bytes.NewReader(body)).WithContext(ctx)
 	req.Header.Set("Content-Type", "application/json")
-	// The token the bot itself registered, so a bot that checks it always passes.
+	// The token the bot registered itself, so one that checks it always passes.
 	if registered.secretToken != "" {
 		req.Header.Set(secretTokenHeader, registered.secretToken)
 	}

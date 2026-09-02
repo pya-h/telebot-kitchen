@@ -34,6 +34,12 @@ func (r *recordingTB) Errorf(format string, args ...any) {
 	r.errs = append(r.errs, fmt.Sprintf(format, args...))
 }
 
+func (r *recordingTB) Failed() bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.errs) > 0
+}
+
 func (r *recordingTB) errors() []string {
 	r.mu.Lock()
 	defer r.mu.Unlock()

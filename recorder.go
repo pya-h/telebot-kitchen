@@ -2,12 +2,12 @@ package kitchen
 
 import (
 	"strconv"
+	"strings"
 	"sync"
 )
 
 // Call is one Bot API method the bot invoked, with the parameters it sent. A
-// call the kitchen rejected is on the record too, carrying the reason, so a
-// test can assert on what the bot got wrong as readily as on what it got right.
+// rejected call is on the record too, carrying the reason.
 type Call struct {
 	Method string
 	ChatID int64
@@ -45,6 +45,16 @@ func (c Call) String() string {
 	return s
 }
 
+func (c Call) subject() subject {
+	return subject{
+		method:   c.Method,
+		chatID:   c.ChatID,
+		text:     c.Text(),
+		keyboard: c.Keyboard(),
+		params:   c.Params,
+	}
+}
+
 // Calls is the record in the order the bot made them.
 type Calls []Call
 
@@ -52,7 +62,7 @@ func (calls Calls) Matching(ms ...Matcher) Calls {
 	want := All(ms...)
 	var found Calls
 	for _, c := range calls {
-		if want.match(c) {
+		if want.match(c.subject()) {
 			found = append(found, c)
 		}
 	}
@@ -79,6 +89,17 @@ func (calls Calls) Last(ms ...Matcher) (Call, bool) {
 	return found[len(found)-1], true
 }
 
+func (calls Calls) String() string {
+	if len(calls) == 0 {
+		return "  (nothing)"
+	}
+	lines := make([]string, len(calls))
+	for i, c := range calls {
+		lines[i] = "  " + c.String()
+	}
+	return strings.Join(lines, "\n")
+}
+
 type recorder struct {
 	mu    sync.Mutex
 	calls Calls
@@ -98,7 +119,6 @@ func (r *recorder) all() Calls {
 	return append(Calls(nil), r.calls...)
 }
 
-// Calls returns every Bot API call the bot has made so far.
 func (k *Kitchen) Calls() Calls { return k.calls.all() }
 
 func newCall(method string, p params, err error) Call {

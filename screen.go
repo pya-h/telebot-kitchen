@@ -45,6 +45,10 @@ func (m Message) Buttons() []Button {
 	return buttons
 }
 
+func (m Message) subject() subject {
+	return subject{text: m.Text, keyboard: m.Keyboard}
+}
+
 // Screen is the newest message in the user's chat, which may be their own.
 func (u *User) Screen() Screen {
 	m, ok := u.kitchen.world.latest(u.chatID)

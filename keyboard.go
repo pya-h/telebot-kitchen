@@ -21,8 +21,7 @@ func buttonsOf(markup *models.InlineKeyboardMarkup) [][]Button {
 	return rows
 }
 
-// A label is what the user reads, so tests written against it break when the
-// wording changes; callback data is the stable, translation-proof alternative.
+// Labels break when the wording changes; callback data is translation-proof.
 func findButton(rows [][]Button, labelOrData string) (Button, bool) {
 	for _, row := range rows {
 		for _, button := range row {

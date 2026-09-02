@@ -13,9 +13,8 @@ const (
 	quietPeriod = 50 * time.Millisecond
 )
 
-// activity wakes waiters whenever anything happens in the conversation, so a
-// test can block on what the bot did instead of on a sleep. Inbound delivery
-// counts too: a test waits on the exchange, not on one side of it.
+// activity wakes waiters whenever anything happens in the conversation, inbound
+// delivery included: a test waits on the exchange, not on one side of it.
 type activity struct {
 	mu   sync.Mutex
 	wake chan struct{}
@@ -32,8 +31,7 @@ func (a *activity) note() {
 }
 
 // watch hands back the channel the next note closes. Take it before testing a
-// condition — a note landing in between would otherwise be missed and the
-// waiter would sleep through its own wake-up.
+// condition, or a note landing in between is missed.
 func (a *activity) watch() <-chan struct{} {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -61,9 +59,7 @@ func (k *Kitchen) WaitFor(what string, cond func() bool) bool {
 }
 
 // Settle waits for the conversation to go quiet, for bots that reply from their
-// own goroutine. It is the blunt instrument: WaitFor and ExpectReply know what
-// they are waiting for, while this one can only watch the clock, so reach for it
-// only when there is nothing specific to wait on.
+// own goroutine. Prefer WaitFor: this one can only watch the clock.
 func (k *Kitchen) Settle() {
 	timeout := time.NewTimer(k.waitTimeout)
 	defer timeout.Stop()
@@ -84,24 +80,35 @@ func (k *Kitchen) Settle() {
 	}
 }
 
-// ExpectReply waits for the bot's next message to this user and returns it.
-// Successive calls walk the replies in order, so a bot that answers twice is
-// read one message at a time.
+// ExpectReply waits for the bot's next message to this user and returns it;
+// successive calls walk the replies in order.
 func (u *User) ExpectReply() Message {
-	var reply Message
-	u.kitchen.WaitFor(fmt.Sprintf("a reply to user %d", u.ID()), func() bool {
-		m, ok := u.nextReply()
-		reply = m
-		return ok
-	})
+	reply, _ := u.awaitReply()
 	return reply
+}
+
+func (u *User) awaitReply() (Message, bool) {
+	var reply Message
+	ok := u.kitchen.WaitFor(fmt.Sprintf("a reply to user %d", u.ID()), func() bool {
+		m, found := u.nextReply()
+		reply = m
+		return found
+	})
+	return reply, ok
 }
 
 // Only the test goroutine ever drives a user, so the watermark needs no lock.
 func (u *User) nextReply() (Message, bool) {
+	m, ok := u.peekReply()
+	if ok {
+		u.awaiting = m.ID
+	}
+	return m, ok
+}
+
+func (u *User) peekReply() (Message, bool) {
 	for _, m := range u.kitchen.History(u.chatID) {
 		if m.FromBot && m.ID > u.awaiting {
-			u.awaiting = m.ID
 			return m, true
 		}
 	}
