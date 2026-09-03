@@ -28,6 +28,15 @@ func TooManyRequests(retryAfter time.Duration) Fault {
 	})
 }
 
+// Blocked is the user shutting the bot out, which a bot only ever learns from
+// the next thing it tries to send them.
+func Blocked() Fault {
+	return refusal(&apiError{
+		Code:        http.StatusForbidden,
+		Description: "Forbidden: bot was blocked by the user",
+	})
+}
+
 func ServerError() Fault {
 	return refusal(&apiError{Code: http.StatusInternalServerError, Description: "Internal Server Error"})
 }

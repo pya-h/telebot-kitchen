@@ -52,6 +52,39 @@ func (c *Chat) Members() []*User {
 	return members
 }
 
+// Pinned is the newest message the bot has pinned here.
+func (c *Chat) Pinned() (Message, bool) {
+	m, ok := c.kitchen.world.newestPin(c.id)
+	if !ok {
+		return Message{}, false
+	}
+	return c.kitchen.view(m), true
+}
+
+// MigrateToSupergroup is the group becoming one, which strands every id a bot
+// stored: calls to the old chat fail from here on, naming the new one.
+func (c *Chat) MigrateToSupergroup(id int64) *Chat {
+	if c.kind != models.ChatTypeGroup {
+		c.kitchen.tb.Errorf("kitchen: only a group migrates, and %q is a %s", c.Title(), c.kind)
+		return c
+	}
+
+	moved := c.kitchen.Supergroup(id, c.Title())
+	if !c.kitchen.world.migrate(c.id, id) {
+		c.kitchen.tb.Errorf("kitchen: %q has already migrated", c.Title())
+		return moved
+	}
+
+	c.announce(c.id, models.Message{MigrateToChatID: id})
+	c.announce(id, models.Message{MigrateFromChatID: c.id})
+	return moved
+}
+
+func (c *Chat) announce(chatID int64, service models.Message) {
+	sent := c.kitchen.world.add(chatID, service)
+	c.kitchen.deliver(models.Update{Message: &sent})
+}
+
 func (c *Chat) History() []Message { return c.kitchen.History(c.id) }
 
 func (c *Chat) Transcript() string { return c.kitchen.Transcript(c.id) }
@@ -76,7 +109,7 @@ func (c *Chat) EditPost(post Message, text string) Message {
 		return Message{}
 	}
 
-	edited, found, _ := c.kitchen.world.edit(c.id, post.ID, func(m *models.Message) error {
+	edited, found, _ := c.kitchen.world.edit(c.id, post.ID, func(_ *chat, m *models.Message) error {
 		m.Text, m.Entities = text, commandEntities(text)
 		return nil
 	})

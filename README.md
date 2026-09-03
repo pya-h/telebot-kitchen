@@ -51,8 +51,8 @@ updates by webhook or through a "handle one update" entry point.
   has a private chat with its own screen and history.
 - **Groups and channels** — a user inside a shared chat has the same verbs, its
   own place in the conversation, and the chat the bot actually branches on.
-- **Membership and rights** — joins, leaves, promotions and a bot kicked out,
-  each as the update Telegram sends, and the permission errors that follow.
+- **Membership and rights** — joins, leaves, edits, pins, bans and a bot kicked
+  out, each as the update Telegram sends, and the permission errors that follow.
 - **Multi-party flows** — two users talking *through* the bot is a first-class
   case, not an afterthought.
 - **Tap by what you see** — press inline buttons by visible label or callback

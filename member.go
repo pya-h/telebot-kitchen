@@ -1,12 +1,15 @@
 package kitchen
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
 
 	"github.com/go-telegram/bot/models"
 )
+
+var errNotTheirs = errors.New("kitchen: not the member's own message")
 
 // Member is a user inside one chat, with their own place in what was said there.
 type Member struct {
@@ -95,7 +98,10 @@ func (m *Member) say(msg models.Message) {
 	msg.From = &sender
 
 	// Speaking somewhere puts you there; Join is what announces it.
-	m.kitchen().world.join(m.chat.id, sender)
+	if !m.kitchen().world.speaking(m.chat.id, sender) {
+		m.kitchen().tb.Errorf("kitchen: the bot restricted %s, so nothing they say arrives", m)
+		return
+	}
 	sent := m.kitchen().world.add(m.chat.id, msg)
 	m.awaiting = sent.ID
 	m.kitchen().deliver(models.Update{Message: &sent})
@@ -107,6 +113,29 @@ func (m *Member) String() string {
 		return fmt.Sprintf("user %d", m.user.id)
 	}
 	return fmt.Sprintf("user %d in %q", m.user.id, m.chat.Title())
+}
+
+// Edit is the member rewording what they said. What the bot edits through the
+// API is its own doing, and comes back to nobody.
+func (m *Member) Edit(sent Message, text string) Message {
+	edited, found, err := m.kitchen().world.edit(m.chat.id, sent.ID, func(_ *chat, msg *models.Message) error {
+		if msg.From == nil || msg.From.ID != m.user.id {
+			return errNotTheirs
+		}
+		msg.Text, msg.Entities = text, commandEntities(text)
+		return nil
+	})
+	switch {
+	case !found:
+		m.kitchen().tb.Errorf("kitchen: %s has no message %d to edit", m, sent.ID)
+		return Message{}
+	case err != nil:
+		m.kitchen().tb.Errorf("kitchen: message %d is not %s's to edit", sent.ID, m)
+		return Message{}
+	}
+
+	m.kitchen().deliver(models.Update{EditedMessage: &edited})
+	return m.kitchen().view(edited)
 }
 
 // Join announces the arrival that In does not.

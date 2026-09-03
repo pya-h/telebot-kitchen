@@ -126,6 +126,10 @@ ada.In(team).Join()     // new_chat_members, then chat_member
 ada.In(team).Leave()
 ```
 
+`ada.In(team).Edit(sent, "what I meant")` is the same idea for a message: the
+member rewording what they said, which the bot hears as `edited_message`. Only
+their own message is theirs to edit.
+
 ### Rights, and the failures that come with them
 
 The bot is an administrator with every right the moment a chat exists, because
@@ -140,12 +144,31 @@ ada.In(team).RemoveBot()                       // kicked out
 
 What the bot then meets is what it meets in production: `403 Forbidden` for a
 chat it is out of, `need administrator rights in the channel chat` for a post it
-may not make, and `message can't be deleted for everyone` for somebody else's
-message. Its own message is always its own to take back.
+may not make, `not enough rights to pin a message`, and `message can't be
+deleted for everyone` for somebody else's. Its own message is always its own to
+take back.
 
 `ada.In(team).Promote(bob, kitchen.PinMessages)` and `Demote(bob)` do the same
 for people, which is what a bot reads back through `getChatMember`. `getChat`,
-`getChatAdministrators` and `getChatMemberCount` answer from the same roster.
+`getChatAdministrators` and `getChatMemberCount` answer from the same roster,
+and the bot changes it itself through `banChatMember`, `unbanChatMember`,
+`restrictChatMember`, `promoteChatMember`, `pinChatMessage` and the unpins. A
+member the bot has restricted is not heard, so a test cannot go on talking
+through a silence the bot asked for.
+
+`PostMessages`, `EditMessages`, `DeleteMessages`, `PinMessages`,
+`RestrictMembers` and `PromoteMembers` are enforced. `InviteUsers` and
+`ChangeInfo` are reported through `getChatMember` and nothing more, since no
+call here can be refused for them.
+
+Nothing the bot does comes back to it: its own message, edit, pin or ban makes
+no update, exactly as its own `sendMessage` never did.
+
+### When a group becomes a supergroup
+
+`team.MigrateToSupergroup(-1001234567890)` strands every chat id the bot stored.
+Calls to the old chat fail the way Telegram fails them, naming the new one in
+`migrate_to_chat_id`, and both chats record the move.
 
 ### Channels
 
@@ -346,10 +369,11 @@ func TestAFloodWaitCostsTheMenu(t *testing.T) {
 }
 ```
 
-The faults are `TooManyRequests(retryAfter)`, `ServerError()`, `Malformed()` —
-a reply no client can decode — and `Timeout()`, which drops the connection
-rather than holding it open, so the test meets the failure at once instead of
-waiting out the bot's own client timeout.
+The faults are `TooManyRequests(retryAfter)`, `Blocked()` — the user shutting
+the bot out, which it only ever learns from the next thing it sends —
+`ServerError()`, `Malformed()`, a reply no client can decode, and `Timeout()`,
+which drops the connection rather than holding it open, so the test meets the
+failure at once instead of waiting out the bot's own client timeout.
 
 Scope a fault with the same matchers the record uses, and choose how long it
 stands:
@@ -542,8 +566,7 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 
 ## Not yet here
 
-An edit the bot makes through the API changes the message without also reaching
-the bot as an `edited_message` update. Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
+Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
 webhook and direct modes cover both ways a bot is normally driven, and a poll is
 reported as an unsupported method rather than silently hanging. This document
 grows with the surface, and describes only what ships today.

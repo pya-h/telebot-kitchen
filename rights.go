@@ -28,9 +28,10 @@ var everyRight = []Right{
 }
 
 type standing struct {
-	user   models.User
-	status models.ChatMemberType
-	rights []Right
+	user     models.User
+	status   models.ChatMemberType
+	rights   []Right
+	silenced bool
 }
 
 func (s standing) may(r Right) bool {
@@ -42,6 +43,17 @@ func (s standing) may(r Right) bool {
 
 func (s standing) present() bool {
 	return s.status != models.ChatMemberTypeLeft && s.status != models.ChatMemberTypeBanned
+}
+
+// rightsIn reads a promotion, whose parameters are named after the rights.
+func rightsIn(p params) []Right {
+	var granted []Right
+	for _, r := range everyRight {
+		if p.flag(string(r)) {
+			granted = append(granted, r)
+		}
+	}
+	return granted
 }
 
 func (s standing) chatMember() models.ChatMember {
@@ -62,6 +74,11 @@ func (s standing) chatMember() models.ChatMember {
 			CanPromoteMembers:  s.may(PromoteMembers),
 			CanInviteUsers:     s.may(InviteUsers),
 			CanChangeInfo:      s.may(ChangeInfo),
+		}}
+
+	case models.ChatMemberTypeRestricted:
+		return models.ChatMember{Type: s.status, Restricted: &models.ChatMemberRestricted{
+			User: &s.user, IsMember: true, CanSendMessages: !s.silenced,
 		}}
 
 	case models.ChatMemberTypeLeft:
@@ -95,7 +112,7 @@ func (w *world) mayPost(chatID int64) error {
 	return nil
 }
 
-// The caller holds the world lock.
+// The may* checks below run with the world lock held.
 func (c *chat) mayDelete(m *models.Message, botID int64) error {
 	if m.From != nil && m.From.ID == botID {
 		return nil
@@ -104,6 +121,35 @@ func (c *chat) mayDelete(m *models.Message, botID int64) error {
 		return nil
 	}
 	return requestError("message can't be deleted for everyone")
+}
+
+func (c *chat) mayEdit(m *models.Message, botID int64) error {
+	if m.From != nil && m.From.ID == botID {
+		return nil
+	}
+	if c.info.Type == models.ChatTypeChannel && c.bot.may(EditMessages) {
+		return nil
+	}
+	return requestError("message can't be edited")
+}
+
+func (c *chat) mayPin() error {
+	if c.info.Type == models.ChatTypePrivate || c.bot.may(PinMessages) {
+		return nil
+	}
+	return requestError("not enough rights to pin a message")
+}
+
+// mayManage covers the calls that change somebody else's standing, which a
+// private chat has none of.
+func (c *chat) mayManage(need Right, what string) error {
+	if c.info.Type == models.ChatTypePrivate {
+		return requestError("method is available for supergroup and channel chats only")
+	}
+	if !c.bot.may(need) {
+		return requestError("not enough rights to " + what)
+	}
+	return nil
 }
 
 func forbidden(description string) *apiError {

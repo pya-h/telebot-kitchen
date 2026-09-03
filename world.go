@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"maps"
+	"net/http"
 	"slices"
 	"strconv"
 	"sync"
@@ -15,6 +16,8 @@ type chat struct {
 	// Kept apart from members, who are people.
 	bot           standing
 	members       map[int64]*standing
+	pinned        []int
+	movedTo       int64
 	nextMessageID int
 	messages      []*models.Message
 }
@@ -162,13 +165,153 @@ func (w *world) join(chatID int64, u models.User) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	c := w.chatAt(chatID)
-	if _, ok := c.members[u.ID]; !ok {
-		c.members[u.ID] = &standing{status: models.ChatMemberTypeMember}
+	w.place(w.chatAt(chatID), u)
+}
+
+func (w *world) place(c *chat, u models.User) *standing {
+	s, ok := c.members[u.ID]
+	if !ok {
+		s = &standing{status: models.ChatMemberTypeMember}
+		c.members[u.ID] = s
 	}
-	c.members[u.ID].user = u
+	s.user = u
 	if c.info.Type == models.ChatTypePrivate {
 		c.info.FirstName, c.info.LastName, c.info.Username = u.FirstName, u.LastName, u.Username
+	}
+	return s
+}
+
+// speaking places the sender, unless the bot has shut them up.
+func (w *world) speaking(chatID int64, u models.User) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c := w.chatAt(chatID)
+	if s, ok := c.members[u.ID]; ok && (s.silenced || s.status == models.ChatMemberTypeBanned) {
+		return false
+	}
+	w.place(c, u)
+	return true
+}
+
+// manage changes a member's standing on the bot's say-so, if it may.
+func (w *world) manage(chatID, userID int64, need Right, what string, apply func(*standing)) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	if err := c.mayManage(need, what); err != nil {
+		return err
+	}
+	s, ok := c.members[userID]
+	if !ok {
+		return requestError("user not found")
+	}
+	apply(s)
+	return nil
+}
+
+// pin adds a message to the chat's pins, newest last.
+func (w *world) pin(chatID int64, messageID int) (models.Message, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return models.Message{}, requestError("message to pin not found")
+	}
+	if err := c.mayPin(); err != nil {
+		return models.Message{}, err
+	}
+	m := w.find(chatID, messageID)
+	if m == nil {
+		return models.Message{}, requestError("message to pin not found")
+	}
+	if !slices.Contains(c.pinned, messageID) {
+		c.pinned = append(c.pinned, messageID)
+	}
+	return *m, nil
+}
+
+// unpin takes back the newest pin, or the one named. Telegram writes nothing in
+// the chat for it, so nobody is told.
+func (w *world) unpin(chatID int64, messageID int, all bool) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	if err := c.mayPin(); err != nil {
+		return err
+	}
+	switch {
+	case all:
+		c.pinned = nil
+	case messageID > 0:
+		if i := slices.Index(c.pinned, messageID); i >= 0 {
+			c.pinned = slices.Delete(c.pinned, i, i+1)
+		}
+	case len(c.pinned) > 0:
+		c.pinned = c.pinned[:len(c.pinned)-1]
+	}
+	return nil
+}
+
+func (w *world) newestPin(chatID int64) (models.Message, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok || len(c.pinned) == 0 {
+		return models.Message{}, false
+	}
+	m := w.find(chatID, c.pinned[len(c.pinned)-1])
+	if m == nil {
+		return models.Message{}, false
+	}
+	return *m, true
+}
+
+// migrate moves a group's people to a supergroup and leaves a forwarding
+// address behind. The history stays: to a bot the supergroup is a new chat.
+func (w *world) migrate(from, to int64) bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, moved := w.chats[from], w.chats[to]
+	if c == nil || moved == nil || c.movedTo != 0 {
+		return false
+	}
+	c.movedTo = to
+	moved.bot = c.bot
+	maps.Copy(moved.members, c.members)
+	return true
+}
+
+// moved reports the refusal a call to a chat that has since become a supergroup
+// gets, carrying the id the bot should be using instead.
+func (w *world) moved(chatID string) error {
+	id, err := strconv.ParseInt(chatID, 10, 64)
+	if err != nil {
+		return nil
+	}
+
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[id]
+	if !ok || c.movedTo == 0 {
+		return nil
+	}
+	return &apiError{
+		Code:            http.StatusBadRequest,
+		Description:     "Bad Request: group chat was upgraded to a supergroup chat",
+		MigrateToChatID: c.movedTo,
 	}
 }
 
@@ -246,7 +389,7 @@ func (w *world) find(chatID int64, messageID int) *models.Message {
 
 // edit reports whether the message exists; mutate returns the error Telegram
 // would raise, so an edit that changes nothing rejects the same way.
-func (w *world) edit(chatID int64, messageID int, mutate func(*models.Message) error) (edited models.Message, found bool, err error) {
+func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Message) error) (edited models.Message, found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -254,7 +397,7 @@ func (w *world) edit(chatID int64, messageID int, mutate func(*models.Message) e
 	if m == nil {
 		return models.Message{}, false, nil
 	}
-	if err := mutate(m); err != nil {
+	if err := mutate(w.chats[chatID], m); err != nil {
 		return *m, true, err
 	}
 	m.EditDate = int(w.clock.Now().Unix())

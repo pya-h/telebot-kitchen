@@ -26,6 +26,13 @@ var apiMethods = map[string]apiMethod{
 	"getChatMember":          (*Kitchen).getChatMember,
 	"getChatAdministrators":  (*Kitchen).getChatAdministrators,
 	"getChatMemberCount":     (*Kitchen).getChatMemberCount,
+	"banChatMember":          (*Kitchen).banChatMember,
+	"unbanChatMember":        (*Kitchen).unbanChatMember,
+	"restrictChatMember":     (*Kitchen).restrictChatMember,
+	"promoteChatMember":      (*Kitchen).promoteChatMember,
+	"pinChatMessage":         (*Kitchen).pinChatMessage,
+	"unpinChatMessage":       (*Kitchen).unpinChatMessage,
+	"unpinAllChatMessages":   (*Kitchen).unpinAllChatMessages,
 	"sendMessage":            (*Kitchen).sendMessage,
 	"sendPhoto":              (*Kitchen).sendPhoto,
 	"forwardMessage":         (*Kitchen).forwardMessage,
@@ -127,6 +134,11 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		fault.serve(w)
 		return
 	}
+	if err := k.world.moved(p["chat_id"]); err != nil {
+		k.calls.record(call.rejected(err))
+		writeError(w, err)
+		return
+	}
 
 	result, err := handler(k, p)
 	if err != nil {
@@ -223,9 +235,10 @@ func unquote(raw json.RawMessage) string {
 }
 
 type apiError struct {
-	Code        int
-	Description string
-	RetryAfter  int
+	Code            int
+	Description     string
+	RetryAfter      int
+	MigrateToChatID int64
 }
 
 func requestError(description string) *apiError {
@@ -259,8 +272,8 @@ func writeError(w http.ResponseWriter, err error) {
 		apiErr = &apiError{Code: http.StatusInternalServerError, Description: err.Error()}
 	}
 	res := response{OK: false, ErrorCode: apiErr.Code, Description: apiErr.Description}
-	if apiErr.RetryAfter > 0 {
-		res.Parameters = &responseParams{RetryAfter: apiErr.RetryAfter}
+	if apiErr.RetryAfter > 0 || apiErr.MigrateToChatID != 0 {
+		res.Parameters = &responseParams{RetryAfter: apiErr.RetryAfter, MigrateToChatID: apiErr.MigrateToChatID}
 	}
 	writeResponse(w, apiErr.Code, res)
 }

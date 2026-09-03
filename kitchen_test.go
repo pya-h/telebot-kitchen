@@ -59,7 +59,11 @@ type apiReply struct {
 	Result      json.RawMessage `json:"result"`
 	ErrorCode   int             `json:"error_code"`
 	Description string          `json:"description"`
-	status      int
+	Parameters  struct {
+		RetryAfter      int   `json:"retry_after"`
+		MigrateToChatID int64 `json:"migrate_to_chat_id"`
+	} `json:"parameters"`
+	status int
 }
 
 func (r apiReply) decode(t *testing.T, dst any) {

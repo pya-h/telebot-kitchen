@@ -65,7 +65,7 @@ func (k *Kitchen) editMessageText(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) error {
+	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
 		if len(m.Photo) > 0 {
 			return requestError("there is no text in the message to edit")
 		}
@@ -84,7 +84,7 @@ func (k *Kitchen) editMessageCaption(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) error {
+	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
 		if len(m.Photo) == 0 {
 			return requestError("there is no caption in the message to edit")
 		}
@@ -102,7 +102,7 @@ func (k *Kitchen) editMessageReplyMarkup(p params) (any, error) {
 		return nil, err
 	}
 
-	return k.applyEdit(p, func(m *models.Message) error {
+	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
 		if sameMarkup(m.ReplyMarkup, markup) {
 			return errNotModified
 		}
@@ -146,7 +146,7 @@ func (k *Kitchen) answerCallbackQuery(p params) (any, error) {
 	return true, nil
 }
 
-func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) error) (any, error) {
+func (k *Kitchen) applyEdit(p params, mutate func(*chat, *models.Message) error) (any, error) {
 	chatID, err := p.chatID()
 	if err != nil {
 		return nil, err
@@ -157,11 +157,11 @@ func (k *Kitchen) applyEdit(p params, mutate func(*models.Message) error) (any, 
 	}
 
 	botID := k.botUser().ID
-	m, found, err := k.world.edit(chatID, messageID, func(m *models.Message) error {
-		if m.From == nil || m.From.ID != botID {
-			return requestError("message can't be edited")
+	m, found, err := k.world.edit(chatID, messageID, func(c *chat, m *models.Message) error {
+		if err := c.mayEdit(m, botID); err != nil {
+			return err
 		}
-		return mutate(m)
+		return mutate(c, m)
 	})
 	if !found {
 		return nil, requestError("message to edit not found")

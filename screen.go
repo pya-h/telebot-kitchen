@@ -21,7 +21,7 @@ type Message struct {
 	FromBot       bool
 	ForwardedFrom string
 	Media         string
-	Event         string // "joined" or "left"
+	Event         string // "joined", "left", "pinned" or "moved"
 	Sent          time.Time
 	Keyboard      [][]Button
 }
@@ -93,6 +93,10 @@ func (k *Kitchen) view(m models.Message) Message {
 		event = "joined"
 	case m.LeftChatMember != nil:
 		event = "left"
+	case m.PinnedMessage != nil:
+		event = "pinned"
+	case m.MigrateToChatID != 0 || m.MigrateFromChatID != 0:
+		event = "moved"
 	}
 
 	return Message{
