@@ -88,12 +88,81 @@ ada.Expect(
 By default only the newest keyboard in the chat answers a tap. `WithScrollback()`
 lets a tap reach buttons on older messages.
 
+## Groups and channels
+
+A user's private chat is theirs alone. A shared one is registered first, with an
+id Telegram would give it — negative, and a positive one is refused:
+
+```go
+team := k.Supergroup(-1001234567890, "Standup")   // also k.Group and k.Channel
+```
+
+`ada.In(team)` is Ada inside that chat, and carries the same verbs the plain user
+has. Each chat keeps its own place in the conversation, so what Ada has already
+read in one says nothing about the other:
+
+```go
+ada.Send("hello")                          // her private chat
+ada.Expect(kitchen.TextIs("hi Ada"))
+
+ada.In(team).SendCommand("standup")
+ada.In(team).Expect(kitchen.TextContains("Who is first?"))
+bob.In(team).Expect(kitchen.TextContains("Who is first?"))   // both were told
+```
+
+A chat's message carries the group rather than a person: `Chat.Title` and
+`Chat.Type` are what the bot branches on, and `From` is the member who spoke.
+`team.Members()` lists who is in it, `team.History()` and `team.Transcript()`
+read it from outside any one member.
+
+### Arriving and leaving
+
+`In` says where somebody is; it is not an event. `Join` and `Leave` are the
+event, and the bot hears them the way Telegram sends them — the service message
+in the chat, then the membership update:
+
+```go
+ada.In(team).Join()     // new_chat_members, then chat_member
+ada.In(team).Leave()
+```
+
+### Rights, and the failures that come with them
+
+The bot is an administrator with every right the moment a chat exists, because
+that is how one is set up before anybody thinks to test it. A chat where it
+cannot work is what you opt into, and the bot hears that as `my_chat_member`:
+
+```go
+ada.In(news).PromoteBot(kitchen.PinMessages)   // and no right to post
+ada.In(team).DemoteBot()                       // an ordinary member
+ada.In(team).RemoveBot()                       // kicked out
+```
+
+What the bot then meets is what it meets in production: `403 Forbidden` for a
+chat it is out of, `need administrator rights in the channel chat` for a post it
+may not make, and `message can't be deleted for everyone` for somebody else's
+message. Its own message is always its own to take back.
+
+`ada.In(team).Promote(bob, kitchen.PinMessages)` and `Demote(bob)` do the same
+for people, which is what a bot reads back through `getChatMember`. `getChat`,
+`getChatAdministrators` and `getChatMemberCount` answer from the same roster.
+
+### Channels
+
+Nobody speaks in a channel: the bot posts through the API, and an admin posting
+from a client is `news.Post(text)`, which the bot hears as `channel_post`.
+`news.EditPost(post, text)` is that post being reworded, heard as
+`edited_channel_post`. What the bot itself sends does not come back to it as a
+post, so a bot that mirrors a channel cannot chase its own tail. A member trying
+to speak there fails with that.
+
 ## Reading what happened
 
 Two sources, one vocabulary.
 
 **The screen** is what the user would see: `ada.Screen()` for the newest message,
-`ada.History()` for the whole chat, `k.History(chatID)` for any chat. A `Message`
+`ada.History()` for the whole chat, `k.History(chatID)` for any chat. In a shared
+chat the same verbs hang off `ada.In(team)`. A `Message`
 carries `Text`, `From`, `Keyboard`, `Media`, `ForwardedFrom`, `Sent`, and prints
 itself the way a client shows it.
 
@@ -473,7 +542,8 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 
 ## Not yet here
 
-Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
+An edit the bot makes through the API changes the message without also reaching
+the bot as an `edited_message` update. Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
 webhook and direct modes cover both ways a bot is normally driven, and a poll is
 reported as an unsupported method rather than silently hanging. This document
 grows with the surface, and describes only what ships today.

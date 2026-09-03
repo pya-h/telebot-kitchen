@@ -40,39 +40,39 @@ func (k *Kitchen) ExpectCount(n int, ms ...Matcher) {
 
 // Expect waits for the bot's next reply and asserts it looks like this;
 // successive calls walk the replies in order.
-func (u *User) Expect(ms ...Matcher) Message {
-	reply, ok := u.awaitReply()
+func (m *Member) Expect(ms ...Matcher) Message {
+	reply, ok := m.awaitReply()
 	if !ok {
 		return reply
 	}
 	if want := All(ms...); !want.match(reply.subject()) {
-		u.kitchen.tb.Errorf("kitchen: user %d was told:\n%s\nwant %s", u.ID(), reply, want)
+		m.kitchen().tb.Errorf("kitchen: %s was told:\n%s\nwant %s", m, reply, want)
 	}
 	return reply
 }
 
-// ExpectScreen waits until the user's screen looks like this, then returns it.
+// ExpectScreen waits until the chat's screen looks like this, then returns it.
 // A bot that edits its menu in place sends nothing new, so waiting on the screen
 // is the only way to follow it.
-func (u *User) ExpectScreen(ms ...Matcher) Screen {
+func (m *Member) ExpectScreen(ms ...Matcher) Screen {
 	want := All(ms...)
 
 	var screen Screen
-	if !u.kitchen.waitFor(func() bool {
-		screen = u.Screen()
+	if !m.kitchen().waitFor(func() bool {
+		screen = m.Screen()
 		return want.match(screen.subject())
 	}) {
-		u.kitchen.tb.Errorf("kitchen: user %d sees:\n%s\nwant %s", u.ID(), screen, want)
+		m.kitchen().tb.Errorf("kitchen: %s sees:\n%s\nwant %s", m, screen, want)
 	}
 	return screen
 }
 
 // ExpectNothingMore asserts the bot sent nothing past the replies already read.
 // It settles first, so it costs the quiet period.
-func (u *User) ExpectNothingMore() {
-	u.kitchen.Settle()
-	if extra, ok := u.peekReply(); ok {
-		u.kitchen.tb.Errorf("kitchen: user %d was also told %q, which no assertion expected", u.ID(), extra)
+func (m *Member) ExpectNothingMore() {
+	m.kitchen().Settle()
+	if extra, ok := m.peekReply(); ok {
+		m.kitchen().tb.Errorf("kitchen: %s was also told %q, which no assertion expected", m, extra)
 	}
 }
 

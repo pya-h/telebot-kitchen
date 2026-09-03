@@ -12,6 +12,9 @@ func (m Message) String() string {
 	if m.Media != "" {
 		parts = append(parts, "("+m.Media+")")
 	}
+	if m.Event != "" {
+		parts = append(parts, "("+m.Event+")")
+	}
 	if m.Text != "" {
 		parts = append(parts, m.Text)
 	}
@@ -50,4 +53,4 @@ func (k *Kitchen) Transcript(chatID int64) string {
 	return strings.Join(entries, "\n\n") + "\n"
 }
 
-func (u *User) Transcript() string { return u.kitchen.Transcript(u.chatID) }
+func (m *Member) Transcript() string { return m.chat.Transcript() }

@@ -61,6 +61,9 @@ func (k *Kitchen) relayed(p params, what string) (source models.Message, target 
 	if !found {
 		return models.Message{}, 0, requestError("message to " + what + " not found")
 	}
+	if err := k.world.mayPost(target); err != nil {
+		return models.Message{}, 0, err
+	}
 	return source, target, nil
 }
 

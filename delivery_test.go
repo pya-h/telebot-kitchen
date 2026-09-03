@@ -129,6 +129,9 @@ func TestBindingOneModeClearsTheOther(t *testing.T) {
 }
 
 func echoHandler(ctx context.Context, b *bot.Bot, u *models.Update) {
+	if u.Message == nil { // membership updates arrive on the same handler
+		return
+	}
 	b.SendMessage(ctx, &bot.SendMessageParams{
 		ChatID: u.Message.Chat.ID,
 		Text:   "echo: " + u.Message.Text,

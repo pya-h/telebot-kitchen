@@ -21,6 +21,7 @@ type Message struct {
 	FromBot       bool
 	ForwardedFrom string
 	Media         string
+	Event         string // "joined" or "left"
 	Sent          time.Time
 	Keyboard      [][]Button
 }
@@ -52,16 +53,16 @@ func (m Message) subject() subject {
 	return subject{chatID: m.ChatID, text: m.Text, keyboard: m.Keyboard}
 }
 
-// Screen returns the newest message in the chat, which may be the user's own.
-func (u *User) Screen() Screen {
-	m, ok := u.kitchen.world.latest(u.chatID)
+// Screen returns the newest message in the chat, which may be the member's own.
+func (m *Member) Screen() Screen {
+	newest, ok := m.kitchen().world.latest(m.chat.id)
 	if !ok {
 		return Screen{}
 	}
-	return Screen{Message: u.kitchen.view(m)}
+	return Screen{Message: m.kitchen().view(newest)}
 }
 
-func (u *User) History() []Message { return u.kitchen.History(u.chatID) }
+func (m *Member) History() []Message { return m.chat.History() }
 
 func (k *Kitchen) History(chatID int64) []Message {
 	log := k.world.history(chatID)
@@ -86,6 +87,14 @@ func (k *Kitchen) view(m models.Message) Message {
 		media = "location"
 	}
 
+	event := ""
+	switch {
+	case len(m.NewChatMembers) > 0:
+		event = "joined"
+	case m.LeftChatMember != nil:
+		event = "left"
+	}
+
 	return Message{
 		ID:            m.ID,
 		ChatID:        m.Chat.ID,
@@ -94,6 +103,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		FromBot:       m.From != nil && m.From.ID == k.botUser().ID,
 		ForwardedFrom: forwardedFrom(m.ForwardOrigin),
 		Media:         media,
+		Event:         event,
 		Sent:          time.Unix(int64(m.Date), 0).UTC(),
 		Keyboard:      buttonsOf(m.ReplyMarkup),
 	}

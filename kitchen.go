@@ -93,7 +93,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		opt(k)
 	}
 	k.bot.ID = botIDFrom(k.token)
-	k.world = newWorld(k.clock)
+	k.world = newWorld(k.clock, k.bot)
 
 	k.server = httptest.NewServer(http.HandlerFunc(k.serve))
 	tb.Cleanup(k.server.Close)

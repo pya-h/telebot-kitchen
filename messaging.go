@@ -21,6 +21,9 @@ func (k *Kitchen) sendMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := k.world.mayPost(chatID); err != nil {
+		return nil, err
+	}
 
 	sender := k.botUser()
 	return k.world.add(chatID, models.Message{From: &sender, Text: text, ReplyMarkup: markup}), nil
@@ -37,6 +40,9 @@ func (k *Kitchen) sendPhoto(p params) (any, error) {
 	}
 	markup, err := p.markup()
 	if err != nil {
+		return nil, err
+	}
+	if err := k.world.mayPost(chatID); err != nil {
 		return nil, err
 	}
 
@@ -114,8 +120,12 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !k.world.remove(chatID, messageID) {
+	found, err := k.world.remove(chatID, messageID, k.botUser().ID)
+	if !found {
 		return nil, requestError("message to delete not found")
+	}
+	if err != nil {
+		return nil, err
 	}
 	return true, nil
 }

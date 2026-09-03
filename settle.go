@@ -89,44 +89,44 @@ func (k *Kitchen) Settle() {
 	}
 }
 
-// ExpectReply waits for the bot's next message to this user and returns it;
+// ExpectReply waits for the bot's next message to this member and returns it;
 // successive calls walk the replies in order.
-func (u *User) ExpectReply() Message {
-	reply, _ := u.awaitReply()
+func (m *Member) ExpectReply() Message {
+	reply, _ := m.awaitReply()
 	return reply
 }
 
-func (u *User) awaitReply() (Message, bool) {
+func (m *Member) awaitReply() (Message, bool) {
 	var reply Message
-	ok := u.kitchen.WaitFor(fmt.Sprintf("a reply to user %d", u.ID()), func() bool {
-		m, found := u.nextReply()
-		reply = m
+	ok := m.kitchen().WaitFor(fmt.Sprintf("a reply to %s", m), func() bool {
+		next, found := m.nextReply()
+		reply = next
 		return found
 	})
 	return reply, ok
 }
 
 // Only the test goroutine ever drives a user, so the watermark needs no lock.
-func (u *User) nextReply() (Message, bool) {
-	m, ok := u.peekReply()
+func (m *Member) nextReply() (Message, bool) {
+	next, ok := m.peekReply()
 	if ok {
-		u.awaiting = m.ID
+		m.awaiting = next.ID
 	}
-	return m, ok
+	return next, ok
 }
 
-func (u *User) peekReply() (Message, bool) {
-	for _, m := range u.kitchen.History(u.chatID) {
-		if m.FromBot && m.ID > u.awaiting {
-			return m, true
+func (m *Member) peekReply() (Message, bool) {
+	for _, sent := range m.chat.History() {
+		if sent.FromBot && sent.ID > m.awaiting {
+			return sent, true
 		}
 	}
 	return Message{}, false
 }
 
-// Whatever is on screen when a user acts is answered by what comes after it.
-func (u *User) awaitFromNow() {
-	if m, ok := u.kitchen.world.latest(u.chatID); ok {
-		u.awaiting = m.ID
+// Whatever is on screen when a member acts is answered by what comes after it.
+func (m *Member) awaitFromNow() {
+	if sent, ok := m.kitchen().world.latest(m.chat.id); ok {
+		m.awaiting = sent.ID
 	}
 }

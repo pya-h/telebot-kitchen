@@ -49,6 +49,10 @@ updates by webhook or through a "handle one update" entry point.
 
 - **Virtual users and chats** — spin up as many users as a scenario needs; each
   has a private chat with its own screen and history.
+- **Groups and channels** — a user inside a shared chat has the same verbs, its
+  own place in the conversation, and the chat the bot actually branches on.
+- **Membership and rights** — joins, leaves, promotions and a bot kicked out,
+  each as the update Telegram sends, and the permission errors that follow.
 - **Multi-party flows** — two users talking *through* the bot is a first-class
   case, not an afterthought.
 - **Tap by what you see** — press inline buttons by visible label or callback

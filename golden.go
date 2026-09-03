@@ -34,12 +34,14 @@ func (k *Kitchen) ExpectGolden(path, got string) {
 	}
 }
 
-// ExpectTranscript compares the user's whole conversation with a golden file,
+// ExpectTranscript compares the chat's whole conversation with a golden file,
 // so a change in wording or layout shows up as a diff rather than as a dozen
 // broken assertions.
-func (u *User) ExpectTranscript(path string) {
-	u.kitchen.ExpectGolden(path, u.Transcript())
+func (c *Chat) ExpectTranscript(path string) {
+	c.kitchen.ExpectGolden(path, c.Transcript())
 }
+
+func (m *Member) ExpectTranscript(path string) { m.chat.ExpectTranscript(path) }
 
 func firstDifference(want, got string) string {
 	wantLines, gotLines := strings.Split(want, "\n"), strings.Split(got, "\n")
