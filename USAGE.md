@@ -312,6 +312,82 @@ if got := screen.String(); got != "(forwarded from Ada Lovelace) hello" {
 }
 ```
 
+## Rushes
+
+Concurrency breaks bots in ways one conversation never shows: a reply in the
+wrong chat, a reply that never comes, one that comes twice, a verb that never
+settles. `-race` sees none of them, because none of them is a data race — they
+are wrong logic, and the bot is perfectly synchronised while it does the wrong
+thing.
+
+A rush runs many short conversations at once, each in a kitchen of its own:
+
+```go
+func TestTheMenuHoldsUpUnderLoad(t *testing.T) {
+	kitchen.Rush{
+		Orders:      120,
+		Concurrency: 12,
+		Bot: func(k *kitchen.Kitchen) error {
+			b, err := New(k.APIURL(), k.Token())
+			if err != nil {
+				return err
+			}
+			k.DeliverTo(b.ProcessUpdate)
+			return nil
+		},
+		Serve: func(o *kitchen.Order) {
+			ada := o.User(101, kitchen.WithFullName("Ada", "Lovelace"))
+
+			// The echo carries the ticket, which is what the cross-chat check reads.
+			ada.Send(o.Ticket)
+			ada.Expect(kitchen.TextIs("echo: " + o.Ticket))
+
+			ada.SendCommand("start")
+			ada.Expect(kitchen.HasButton("English"))
+
+			ada.Tap("English")
+			ada.ExpectScreen(kitchen.HasButton("Done"))
+
+			ada.Tap("Done")
+			ada.ExpectScreen(kitchen.TextContains("All set"))
+			ada.ExpectNothingMore()
+		},
+	}.Run(t)
+}
+```
+
+```sh
+go test ./... -kitchen.stress    # an ordinary run skips every rush
+```
+
+`Order` carries the whole kitchen, so the script is written with the verbs you
+already know — and that is where two of the four checks come from: a lost reply
+is an `Expect` that times out, a duplicate is what `ExpectNothingMore` catches.
+The harness owns the two a script cannot see for itself. `o.Ticket` belongs to
+this order alone; put it in what your users say, and the rush reads every chat
+afterwards looking for somebody else's — which is how a reply landing in the
+wrong conversation is caught. An order that never finishes is reported as a
+stuck verb rather than hanging the run.
+
+Every broken order is reported together, with the command that replays one:
+
+```
+kitchen: 7 of 120 orders broke at 12-way concurrency
+
+  order 8:
+    kitchen: user 101 was told:
+    echo: ticket-2
+    want text "echo: ticket-8"
+    kitchen: chat 101 was told "echo: ticket-2", which belongs to another conversation
+
+  replay it: go test -run <this test> -kitchen.stress -kitchen.seed=1 -kitchen.order=8
+```
+
+`Seed` drives `o.Rand`, so a script that varies itself varies the same way on a
+replay. `Options` are passed to every kitchen in the rush, and `Timeout` caps one
+order. Sockets, not memory, are the ceiling — each kitchen opens a real listener,
+so `Concurrency` is the knob that matters.
+
 ## Determinism
 
 Message, update and file ids are monotonic per kitchen, and the clock only moves
@@ -331,5 +407,6 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 ## Not yet here
 
 Long-poll `getUpdates` delivery — webhook and direct modes cover both ways a bot
-is normally driven — and the stress and concurrency harness. This document grows
-with the surface, and describes only what ships today.
+is normally driven — and the external load runner, which measures throughput and
+latency from outside a test rather than checking invariants inside one. This
+document grows with the surface, and describes only what ships today.

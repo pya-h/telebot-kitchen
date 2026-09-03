@@ -1,6 +1,7 @@
 package kitchen
 
 import (
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -143,6 +144,18 @@ func (w *world) keyboards(chatID int64, limit int) []models.Message {
 		}
 	}
 	return screens
+}
+
+func (w *world) chatIDs() []int64 {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	ids := make([]int64, 0, len(w.chats))
+	for id := range w.chats {
+		ids = append(ids, id)
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 func (w *world) latest(chatID int64) (models.Message, bool) {
