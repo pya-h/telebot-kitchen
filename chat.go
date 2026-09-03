@@ -26,15 +26,19 @@ func (k *Kitchen) Channel(id int64, title string) *Chat {
 	return k.sharedChat(id, models.ChatTypeChannel, title)
 }
 
-func (k *Kitchen) sharedChat(id int64, kind models.ChatType, title string) *Chat {
+func (k *Kitchen) sharedChat(id int64, want models.ChatType, title string) *Chat {
 	// Bots branch on the sign, so a positive id would test a chat that cannot exist.
 	if id >= 0 {
-		k.tb.Errorf("kitchen: a %s id must be negative, as Telegram's are, not %d", kind, id)
+		k.tb.Errorf("kitchen: a %s id must be negative, as Telegram's are, not %d", want, id)
 	}
 	if title == "" {
 		title = fmt.Sprintf("Chat%d", -id)
 	}
-	k.world.register(id, kind, title, k.botUser())
+
+	kind, ok := k.world.register(id, want, title, k.botUser())
+	if !ok {
+		k.tb.Errorf("kitchen: chat %d is already a %s, so it cannot also be a %s", id, kind, want)
+	}
 	return &Chat{kitchen: k, id: id, kind: kind}
 }
 

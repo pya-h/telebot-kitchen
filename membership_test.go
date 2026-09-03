@@ -232,3 +232,28 @@ func TestAPrivateChatHasNoMembershipToChange(t *testing.T) {
 		t.Errorf("errors = %v, want one about a private chat", errs)
 	}
 }
+
+func TestTheBotStopsCountingOnceItIsOut(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	team := k.Group(-42, "Standup")
+	ali := k.User(7).In(team)
+	ali.Send("morning")
+
+	if got := memberCountOf(t, k, team.ID()); got != 2 {
+		t.Errorf("count = %d, want the member and the bot", got)
+	}
+
+	ali.RemoveBot()
+	if got := memberCountOf(t, k, team.ID()); got != 1 {
+		t.Errorf("count = %d, want only the member left", got)
+	}
+}
+
+func memberCountOf(t *testing.T, k *Kitchen, chatID int64) int {
+	t.Helper()
+	var count int
+	callForm(t, k, "getChatMemberCount", map[string]string{"chat_id": fmt.Sprint(chatID)}).decode(t, &count)
+	return count
+}

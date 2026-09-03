@@ -161,3 +161,34 @@ func TestOnlyAChannelCarriesPosts(t *testing.T) {
 		t.Errorf("errors = %v, want one about posting to a group", errs)
 	}
 }
+
+func TestSpeakingBringsBackSomebodyWhoLeft(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	team := k.Group(-42, "Standup")
+	ali := k.User(7).In(team)
+	ali.Join()
+	ali.Leave()
+	ali.Send("one more thing")
+
+	if members := team.Members(); len(members) != 1 || members[0].ID() != 7 {
+		t.Errorf("members = %v, want whoever is talking to be in the room", members)
+	}
+}
+
+func TestAnIDKeepsTheKindItWasFirstGiven(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.Group(-42, "Standup")
+	again := k.Channel(-42, "Releases")
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "already a group") {
+		t.Fatalf("errors = %v, want one about the kind already taken", errs)
+	}
+	if again.kind != models.ChatTypeGroup {
+		t.Errorf("handle is a %s, want it to agree with the chat that exists", again.kind)
+	}
+}

@@ -13,6 +13,8 @@ func (k *Kitchen) forwardMessage(p params) (any, error) {
 	forwarded.From = &sender
 	forwarded.ForwardOrigin = origin(source)
 	forwarded.EditDate = 0
+	// Whose message it is now depends on where it lands, not on where it came from.
+	forwarded.SenderChat = nil
 	// Telegram strips inline keyboards on a forward
 	forwarded.ReplyMarkup = nil
 
@@ -33,6 +35,7 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	copied := source
 	copied.From = &sender
 	copied.EditDate = 0
+	copied.SenderChat = nil
 	copied.ForwardOrigin = nil
 	copied.ReplyMarkup = markup
 	if caption := p["caption"]; caption != "" && len(copied.Photo) > 0 {
@@ -68,18 +71,31 @@ func (k *Kitchen) relayed(p params, what string) (source models.Message, target 
 }
 
 func origin(m models.Message) *models.MessageOrigin {
-	// Forwarding a forward still points at whoever wrote it.
-	if m.ForwardOrigin != nil {
-		return m.ForwardOrigin
+	switch {
+	// Forwarding a forward still points at whoever wrote it. Copied, because the
+	// library writes the type back into the struct as it encodes one.
+	case m.ForwardOrigin != nil:
+		carried := *m.ForwardOrigin
+		return &carried
+
+	case m.SenderChat != nil:
+		return &models.MessageOrigin{
+			Type: models.MessageOriginTypeChannel,
+			MessageOriginChannel: &models.MessageOriginChannel{
+				Date:      m.Date,
+				Chat:      *m.SenderChat,
+				MessageID: m.ID,
+			},
+		}
+
+	case m.From != nil:
+		return &models.MessageOrigin{
+			Type: models.MessageOriginTypeUser,
+			MessageOriginUser: &models.MessageOriginUser{
+				Date:       m.Date,
+				SenderUser: *m.From,
+			},
+		}
 	}
-	if m.From == nil {
-		return nil
-	}
-	return &models.MessageOrigin{
-		Type: models.MessageOriginTypeUser,
-		MessageOriginUser: &models.MessageOriginUser{
-			Date:       m.Date,
-			SenderUser: *m.From,
-		},
-	}
+	return nil
 }

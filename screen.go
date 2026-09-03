@@ -103,7 +103,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		ID:            m.ID,
 		ChatID:        m.Chat.ID,
 		Text:          text,
-		From:          displayName(m.From),
+		From:          author(m),
 		FromBot:       m.From != nil && m.From.ID == k.botUser().ID,
 		ForwardedFrom: forwardedFrom(m.ForwardOrigin),
 		Media:         media,
@@ -113,11 +113,29 @@ func (k *Kitchen) view(m models.Message) Message {
 	}
 }
 
+// author is who a client shows above the message: a channel signs its posts
+// with its own name rather than with a person's.
+func author(m models.Message) string {
+	if m.From != nil {
+		return displayName(m.From)
+	}
+	if m.SenderChat != nil {
+		return m.SenderChat.Title
+	}
+	return ""
+}
+
 func forwardedFrom(o *models.MessageOrigin) string {
-	if o == nil || o.MessageOriginUser == nil {
+	if o == nil {
 		return ""
 	}
-	return displayName(&o.MessageOriginUser.SenderUser)
+	switch {
+	case o.MessageOriginUser != nil:
+		return displayName(&o.MessageOriginUser.SenderUser)
+	case o.MessageOriginChannel != nil:
+		return o.MessageOriginChannel.Chat.Title
+	}
+	return ""
 }
 
 func displayName(u *models.User) string {

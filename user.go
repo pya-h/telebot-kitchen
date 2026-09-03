@@ -44,6 +44,11 @@ type User struct {
 
 // User returns the virtual user with this id, creating them on first mention.
 func (k *Kitchen) User(id int64, opts ...UserOption) *User {
+	// Bots branch on the sign, so a negative id would test a person who cannot exist.
+	if id <= 0 {
+		k.tb.Errorf("kitchen: a user id must be positive, as Telegram's are, not %d", id)
+	}
+
 	k.mu.Lock()
 	defer k.mu.Unlock()
 

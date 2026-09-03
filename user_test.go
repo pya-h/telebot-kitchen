@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/go-telegram/bot"
@@ -158,5 +159,16 @@ func TestShareLocation(t *testing.T) {
 
 	if got.Location == nil || got.Location.Latitude != 35.6892 || got.Location.Longitude != 51.389 {
 		t.Errorf("location = %+v, want the shared coordinates", got.Location)
+	}
+}
+
+func TestAUserIsRefusedANegativeID(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	New(tb).User(-42)
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "must be positive") {
+		t.Errorf("errors = %v, want one about the id", errs)
 	}
 }

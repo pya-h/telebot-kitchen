@@ -48,7 +48,10 @@ func (k *Kitchen) Transcript(chatID int64) string {
 
 	entries := make([]string, len(log))
 	for i, m := range log {
-		entries[i] = "**" + m.From + ":** " + m.String()
+		entries[i] = m.String()
+		if m.From != "" {
+			entries[i] = "**" + m.From + ":** " + entries[i]
+		}
 	}
 	return strings.Join(entries, "\n\n") + "\n"
 }

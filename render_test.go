@@ -58,3 +58,23 @@ func TestTranscriptReadsAsAConversation(t *testing.T) {
 		t.Errorf("transcript =\n%s\nwant\n%s", got, want)
 	}
 }
+
+// A channel has no sender of its own kind, so a client signs its posts with the
+// channel, and a service message nobody wrote carries no name at all.
+func TestATranscriptNamesWhoeverWrote(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	news := k.Channel(-1002, "Releases")
+	news.Post("v1 is out")
+
+	if got, want := news.Transcript(), "**Releases:** v1 is out\n"; got != want {
+		t.Errorf("transcript = %q, want %q", got, want)
+	}
+
+	team := k.Group(-42, "Standup")
+	team.MigrateToSupergroup(-1042)
+	if got, want := team.Transcript(), "(moved)\n"; got != want {
+		t.Errorf("transcript = %q, want %q", got, want)
+	}
+}

@@ -63,7 +63,8 @@ posts to it in process.
 ## Talking to the bot
 
 Users are virtual people with their own private chat. `k.User(id, opts...)`
-creates one on first mention and returns the same user afterwards.
+creates one on first mention and returns the same user afterwards. Their id is
+positive, as Telegram's are, and a negative one is refused.
 
 | verb | what it does |
 | --- | --- |
@@ -125,6 +126,9 @@ in the chat, then the membership update:
 ada.In(team).Join()     // new_chat_members, then chat_member
 ada.In(team).Leave()
 ```
+
+Speaking is enough to be in the room, though: somebody who left is back on the
+roster the moment they say something.
 
 `ada.In(team).Edit(sent, "what I meant")` is the same idea for a message: the
 member rewording what they said, which the bot hears as `edited_message`. Only
@@ -393,8 +397,9 @@ record with the refusal against it.
 
 `forwardMessage` and `copyMessage` are modelled down to their return types: a
 forward comes back as a message, a copy as a bare id. A forward carries where it
-came from and loses its inline keyboard; a copy carries neither, and takes only
-the caption and keyboard the call gives it.
+came from — a person, or the channel that published it — and loses its inline
+keyboard; a copy carries neither, and takes only the caption and keyboard the
+call gives it.
 
 `ForwardedFrom` is what tells them apart on the receiving screen:
 

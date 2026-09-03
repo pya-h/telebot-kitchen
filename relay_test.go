@@ -223,3 +223,30 @@ func TestARelayReachesTheOtherUser(t *testing.T) {
 		t.Errorf("Ada's chat = %v, want the relay to leave it alone", log)
 	}
 }
+
+func TestAForwardedPostNamesTheChannelItCameFrom(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	news := k.Channel(-1002, "Releases")
+	post := news.Post("v1 is out")
+
+	forwarded, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID:     testChatID,
+		FromChatID: news.ID(),
+		MessageID:  post.ID,
+	})
+	if err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	// Where it landed decides who sent it; the channel is only where it began.
+	if forwarded.SenderChat != nil {
+		t.Errorf("sender chat = %+v, want the channel left behind", forwarded.SenderChat)
+	}
+
+	landed := k.History(testChatID)
+	if len(landed) != 1 || landed[0].ForwardedFrom != "Releases" {
+		t.Errorf("chat = %v, want the post attributed to the channel", landed)
+	}
+}

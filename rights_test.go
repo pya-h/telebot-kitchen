@@ -245,3 +245,61 @@ func TestAChatReportsWhatIsPinned(t *testing.T) {
 		t.Errorf("pinned = %+v, want the message the bot pinned", info.PinnedMessage)
 	}
 }
+
+func TestDeletingAPinnedMessageTakesTheOneBefore(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	team := k.Group(-42, "Standup")
+	ali := k.User(7).In(team)
+	ali.Send("first")
+	ali.Send("second")
+
+	said := team.History()
+	for _, m := range said {
+		callForm(t, k, "pinChatMessage", map[string]string{"chat_id": "-42", "message_id": fmt.Sprint(m.ID)})
+	}
+	callForm(t, k, "deleteMessage", map[string]string{"chat_id": "-42", "message_id": fmt.Sprint(said[1].ID)})
+
+	pinned, ok := team.Pinned()
+	if !ok || pinned.Text != "first" {
+		t.Errorf("pinned = %+v, %v; want the pin under the deleted one", pinned, ok)
+	}
+}
+
+func TestAMigratedGroupHandsOverStandingsOfItsOwn(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	team := k.Group(-42, "Standup")
+	k.User(7).In(team).Join()
+	moved := team.MigrateToSupergroup(-1042)
+
+	if reply := callForm(t, k, "banChatMember", map[string]string{
+		"chat_id": "-1042", "user_id": "7",
+	}); !reply.OK {
+		t.Fatalf("reply = %+v, want the ban allowed", reply)
+	}
+	if members := moved.Members(); len(members) != 0 {
+		t.Errorf("supergroup members = %v, want the banned one gone", members)
+	}
+	if members := team.Members(); len(members) != 1 {
+		t.Errorf("group members = %v, want the chat it left behind untouched", members)
+	}
+}
+
+// The pin is written in the chat, but what the bot does is not a reply the
+// member has to read.
+func TestAPinIsNotAReplyToRead(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	team := k.Group(-42, "Standup")
+	ali := k.User(7).In(team)
+	ali.Send("read this")
+	callForm(t, k, "pinChatMessage", map[string]string{
+		"chat_id": "-42", "message_id": fmt.Sprint(team.History()[0].ID),
+	})
+
+	ali.ExpectNothingMore()
+}

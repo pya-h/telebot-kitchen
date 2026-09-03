@@ -63,8 +63,11 @@ func (k *Kitchen) getChatMemberCount(p params) (any, error) {
 	if _, found := k.world.info(chatID); !found {
 		return nil, requestError("chat not found")
 	}
-	// The bot counts too.
-	return len(k.world.roster(chatID)) + 1, nil
+	count := len(k.world.roster(chatID))
+	if k.world.botPresent(chatID) {
+		count++
+	}
+	return count, nil
 }
 
 // The calls that change somebody else's standing. Each one is the bot's own
@@ -133,6 +136,7 @@ func (k *Kitchen) pinChatMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// No sender: what the bot does is not a reply coming back to a member.
 	k.world.add(chatID, models.Message{PinnedMessage: &models.MaybeInaccessibleMessage{
 		Type: models.MaybeInaccessibleMessageTypeMessage, Message: &pinned,
 	}})

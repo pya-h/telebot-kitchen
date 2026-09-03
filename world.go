@@ -71,11 +71,17 @@ func botStanding(kind models.ChatType, bot models.User) standing {
 	return standing{user: bot, status: models.ChatMemberTypeAdministrator, rights: everyRight}
 }
 
-func (w *world) register(id int64, kind models.ChatType, title string, bot models.User) {
+// register describes a chat, handing back the kind it ends up with: an id
+// already taken keeps the one it was first given.
+func (w *world) register(id int64, kind models.ChatType, title string, bot models.User) (models.ChatType, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	if c, ok := w.chats[id]; ok && c.info.Type != kind {
+		return c.info.Type, false
+	}
 	w.chatOf(id, kind, title, bot)
+	return kind, true
 }
 
 // restand moves somebody, handing back the pair a membership update carries.
@@ -130,22 +136,26 @@ func (w *world) administrators(chatID int64) []*models.ChatMember {
 	if !ok {
 		return nil
 	}
-	var admins []*models.ChatMember
-	for _, s := range append([]*standing{&c.bot}, presentBy(c, slices.Sorted(maps.Keys(c.members)))...) {
+	admins := make([]*models.ChatMember, 0, len(c.members)+1)
+	add := func(s *standing) {
 		if s.status == models.ChatMemberTypeAdministrator || s.status == models.ChatMemberTypeOwner {
 			member := s.chatMember()
 			admins = append(admins, &member)
 		}
 	}
+	add(&c.bot)
+	for _, id := range slices.Sorted(maps.Keys(c.members)) {
+		add(c.members[id])
+	}
 	return admins
 }
 
-func presentBy(c *chat, ids []int64) []*standing {
-	members := make([]*standing, 0, len(ids))
-	for _, id := range ids {
-		members = append(members, c.members[id])
-	}
-	return members
+func (w *world) botPresent(chatID int64) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	return ok && c.bot.present()
 }
 
 func (w *world) info(chatID int64) (models.Chat, bool) {
@@ -190,7 +200,9 @@ func (w *world) speaking(chatID int64, u models.User) bool {
 	if s, ok := c.members[u.ID]; ok && (s.silenced || s.status == models.ChatMemberTypeBanned) {
 		return false
 	}
-	w.place(c, u)
+	if s := w.place(c, u); s.status == models.ChatMemberTypeLeft {
+		s.status = models.ChatMemberTypeMember
+	}
 	return true
 }
 
@@ -289,7 +301,10 @@ func (w *world) migrate(from, to int64) bool {
 	}
 	c.movedTo = to
 	moved.bot = c.bot
-	maps.Copy(moved.members, c.members)
+	for id, s := range c.members {
+		carried := *s
+		moved.members[id] = &carried
+	}
 	return true
 }
 
@@ -421,6 +436,7 @@ func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, er
 			return true, err
 		}
 		c.messages = append(c.messages[:i], c.messages[i+1:]...)
+		c.pinned = slices.DeleteFunc(c.pinned, func(id int) bool { return id == messageID })
 		return true, nil
 	}
 	return false, nil
