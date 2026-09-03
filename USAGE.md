@@ -388,6 +388,73 @@ replay. `Options` are passed to every kitchen in the rush, and `Timeout` caps on
 order. Sockets, not memory, are the ceiling — each kitchen opens a real listener,
 so `Concurrency` is the knob that matters.
 
+## Measuring under load
+
+A rush asks whether the bot is correct under concurrency. The load runner asks
+what it costs, and it lives outside the toolbox — in `load`, which may read the
+real clock the kitchen itself may not.
+
+It is a library, not a command: it cannot know your conversations, so you write
+a small `main.go` holding nothing but yours.
+
+```go
+report := load.Run{
+	Orders:      200,
+	Concurrency: 16,
+	Bot: func(k *kitchen.Kitchen) error {
+		b, err := example.New(k.APIURL(), k.Token())
+		if err != nil {
+			return err
+		}
+		k.DeliverTo(b.ProcessUpdate)
+		return nil
+	},
+	Serve: func(o *load.Order) {
+		ada := o.User(101, kitchen.WithFullName("Ada", "Lovelace"))
+
+		o.Step("echo", func() {
+			ada.Send(o.Ticket)
+			ada.Expect(kitchen.TextIs("echo: " + o.Ticket))
+		})
+		o.Step("open the menu", func() {
+			ada.SendCommand("start")
+			ada.Expect(kitchen.HasButton("English"))
+		})
+	},
+}.Measure()
+
+fmt.Print(report)
+```
+
+`o.Step(name, fn)` times a part of the conversation, so the report can say where
+the time went. Everything else is the ordinary verbs again.
+
+```
+200 orders at 16-way concurrency in 185.903ms — 1076 orders/sec
+
+  conversation           n 200   p50 12.192ms  p95 33.815ms  max 41.22ms
+  kitchen alone          n 200   p50 62µs      p95 445µs     max 1.763ms
+  net of the kitchen     p50 12.131ms
+
+  step
+  echo                   n 200   p50 1.269ms   p95 4.478ms   max 30.674ms
+  open the menu          n 200   p50 1.439ms   p95 4.924ms   max 26.835ms
+
+  peak goroutines 147
+  every order came back clean
+```
+
+The `kitchen alone` line is the point of the exercise: the same lifecycle with no
+bot in it, so you can tell what the numbers belong to. Above, the harness costs
+62µs against a 12ms conversation, so the time is the bot's. Orders that break are
+counted by kind — `assertion`, `stuck`, `build` — rather than reported one by
+one, which is what a rush is for.
+
+Read them for what they are. Nothing here crosses a network, so the figures
+describe handler and datastore cost, not Telegram. And a bot that paces itself
+still sleeps for real, so what you measure is its own pacing under load rather
+than a throughput ceiling.
+
 ## Determinism
 
 Message, update and file ids are monotonic per kitchen, and the clock only moves
@@ -406,7 +473,7 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 
 ## Not yet here
 
-Long-poll `getUpdates` delivery — webhook and direct modes cover both ways a bot
-is normally driven — and the external load runner, which measures throughput and
-latency from outside a test rather than checking invariants inside one. This
-document grows with the surface, and describes only what ships today.
+Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
+webhook and direct modes cover both ways a bot is normally driven, and a poll is
+reported as an unsupported method rather than silently hanging. This document
+grows with the surface, and describes only what ships today.

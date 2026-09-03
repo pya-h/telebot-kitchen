@@ -62,6 +62,8 @@ updates by webhook or through a "handle one update" entry point.
   from a worker goroutine are settled before your assertions run.
 - **Concurrency rushes** — run a hundred conversations at once and catch the
   reply that lands in the wrong chat, which no race detector can see.
+- **Load measurement** — drive the bot under pressure from a small binary and
+  read throughput and per-step latency against the kitchen's own cost.
 - **Deterministic by design** — message and update IDs are stable and the clock
   is injectable, so tests read the same way every run.
 
