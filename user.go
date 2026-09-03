@@ -8,24 +8,34 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type UserOption func(*models.User)
+type UserOption func(*Identity)
+
+// Identity is who a virtual person is to Telegram. Their id is not on it: it is
+// the key they are registered under, and an option must not be able to move it.
+type Identity struct {
+	Username     string
+	FirstName    string
+	LastName     string
+	LanguageCode string
+}
 
 func WithUsername(username string) UserOption {
-	return func(u *models.User) { u.Username = username }
+	return func(i *Identity) { i.Username = username }
 }
 
 func WithFullName(first, last string) UserOption {
-	return func(u *models.User) { u.FirstName, u.LastName = first, last }
+	return func(i *Identity) { i.FirstName, i.LastName = first, last }
 }
 
 func WithLanguage(code string) UserOption {
-	return func(u *models.User) { u.LanguageCode = code }
+	return func(i *Identity) { i.LanguageCode = code }
 }
 
 // User is a virtual person talking to the bot through the kitchen.
 type User struct {
 	kitchen  *Kitchen
-	info     models.User
+	id       int64
+	info     Identity
 	chatID   int64
 	awaiting int
 }
@@ -39,7 +49,8 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 	if !ok {
 		u = &User{
 			kitchen: k,
-			info:    models.User{ID: id, FirstName: fmt.Sprintf("User%d", id)},
+			id:      id,
+			info:    Identity{FirstName: fmt.Sprintf("User%d", id)},
 			chatID:  id,
 		}
 		k.users[id] = u
@@ -47,12 +58,11 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 	for _, opt := range opts {
 		opt(&u.info)
 	}
-	u.info.ID = id // the registry key; an option must not be able to move it
-	k.world.join(u.info)
+	k.world.join(u.telegram())
 	return u
 }
 
-func (u *User) ID() int64 { return u.info.ID }
+func (u *User) ID() int64 { return u.id }
 
 func (u *User) ChatID() int64 { return u.chatID }
 
@@ -132,7 +142,18 @@ func (u *User) say(m models.Message) {
 func (u *User) identity() models.User {
 	u.kitchen.mu.RLock()
 	defer u.kitchen.mu.RUnlock()
-	return u.info
+	return u.telegram()
+}
+
+// telegram is the user as Telegram would carry them; the caller holds the lock.
+func (u *User) telegram() models.User {
+	return models.User{
+		ID:           u.id,
+		FirstName:    u.info.FirstName,
+		LastName:     u.info.LastName,
+		Username:     u.info.Username,
+		LanguageCode: u.info.LanguageCode,
+	}
 }
 
 // Telegram parses entities itself, so a message opening with a command carries

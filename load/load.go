@@ -26,8 +26,6 @@ const (
 	sampleEvery = 10 * time.Millisecond
 )
 
-// Run is one measured pass: the same conversation, many times over, with a
-// kitchen per order the way a rush does it.
 type Run struct {
 	Orders      int                          // conversations to run
 	Concurrency int                          // how many at once; sockets, not memory, are the ceiling
