@@ -17,16 +17,34 @@ func (k *Kitchen) sendMessage(p params) (any, error) {
 	if text == "" {
 		return nil, requestError("message text is empty")
 	}
+	markup, err := k.accept(p, chatID)
+	if err != nil {
+		return nil, err
+	}
+
+	sender := k.botUser()
+	return k.world.add(chatID, models.Message{From: &sender, Text: text, ReplyMarkup: markup}), nil
+}
+
+// accept clears a send to go ahead, handing back the inline keyboard it carries.
+// The hard keyboard is chat state, so it is only touched once the post is
+// allowed: a refused send leaves the one already up alone.
+func (k *Kitchen) accept(p params, chatID int64) (*models.InlineKeyboardMarkup, error) {
 	markup, err := p.markup()
+	if err != nil {
+		return nil, err
+	}
+	menu, changed, err := p.menu()
 	if err != nil {
 		return nil, err
 	}
 	if err := k.world.mayPost(chatID); err != nil {
 		return nil, err
 	}
-
-	sender := k.botUser()
-	return k.world.add(chatID, models.Message{From: &sender, Text: text, ReplyMarkup: markup}), nil
+	if changed {
+		k.world.setMenu(chatID, menu)
+	}
+	return markup, nil
 }
 
 func (k *Kitchen) sendPhoto(p params) (any, error) {
@@ -38,11 +56,8 @@ func (k *Kitchen) sendPhoto(p params) (any, error) {
 	if photo == "" {
 		return nil, badRequest("photo")
 	}
-	markup, err := p.markup()
+	markup, err := k.accept(p, chatID)
 	if err != nil {
-		return nil, err
-	}
-	if err := k.world.mayPost(chatID); err != nil {
 		return nil, err
 	}
 

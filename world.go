@@ -14,9 +14,12 @@ import (
 type chat struct {
 	info models.Chat
 	// Kept apart from members, who are people.
-	bot           standing
-	members       map[int64]*standing
-	pinned        []int
+	bot     standing
+	members map[int64]*standing
+	pinned  []int
+	// A reply keyboard belongs to the chat, not to the message that raised it:
+	// it stays up until another one replaces or removes it.
+	menu          [][]string
 	movedTo       int64
 	nextMessageID int
 	messages      []*models.Message
@@ -301,6 +304,7 @@ func (w *world) migrate(from, to int64) bool {
 	}
 	c.movedTo = to
 	moved.bot = c.bot
+	moved.menu = c.menu
 	for id, s := range c.members {
 		carried := *s
 		moved.members[id] = &carried
@@ -346,6 +350,29 @@ func (w *world) roster(chatID int64) []int64 {
 		}
 	}
 	return ids
+}
+
+// setMenu raises the chat's reply keyboard, or takes it away when rows is nil.
+func (w *world) setMenu(chatID int64, rows [][]string) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.chatAt(chatID).menu = rows
+}
+
+func (w *world) menu(chatID int64) [][]string {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return nil
+	}
+	rows := make([][]string, len(c.menu))
+	for i, row := range c.menu {
+		rows[i] = slices.Clone(row)
+	}
+	return rows
 }
 
 func (w *world) title(chatID int64) string {

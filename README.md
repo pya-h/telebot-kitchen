@@ -57,6 +57,8 @@ updates by webhook or through a "handle one update" entry point.
   case, not an afterthought.
 - **Tap by what you see** — press inline buttons by visible label or callback
   data; the kitchen finds them on the current screen for you.
+- **Both keyboards** — inline buttons on a message, and the reply keyboard that
+  outlives it: `Menu()` says what is up, `Press` pushes a key.
 - **Rich input** — text, commands, photos and locations.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.

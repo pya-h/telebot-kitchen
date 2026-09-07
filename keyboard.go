@@ -1,11 +1,27 @@
 package kitchen
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/go-telegram/bot/models"
 )
+
+// Menu is the reply keyboard up in this chat: the hard keys under the compose
+// box, which stay put until the bot replaces or removes them.
+func (c *Chat) Menu() [][]string { return c.kitchen.world.menu(c.id) }
+
+func (m *Member) Menu() [][]string { return m.chat.Menu() }
+
+func (m *Member) HasKey(label string) bool {
+	for _, row := range m.Menu() {
+		if slices.Contains(row, label) {
+			return true
+		}
+	}
+	return false
+}
 
 func buttonsOf(markup *models.InlineKeyboardMarkup) [][]Button {
 	if markup == nil {
@@ -31,6 +47,19 @@ func findButton(rows [][]Button, labelOrData string) (Button, bool) {
 		}
 	}
 	return Button{}, false
+}
+
+func keyLabels(rows [][]string) string {
+	var labels []string
+	for _, row := range rows {
+		for _, key := range row {
+			labels = append(labels, strconv.Quote(key))
+		}
+	}
+	if len(labels) == 0 {
+		return "none"
+	}
+	return strings.Join(labels, ", ")
 }
 
 func buttonLabels(rows [][]Button) string {

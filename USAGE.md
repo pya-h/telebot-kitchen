@@ -71,6 +71,7 @@ positive, as Telegram's are, and a negative one is refused.
 | `Send(text)` | a text message, with command entities parsed as Telegram parses them |
 | `SendCommand(name, args...)` | `/name arg arg`, entities included |
 | `Tap(labelOrData)` | presses an inline button by its visible label or its callback data |
+| `Press(label)` | pushes a key on the reply keyboard |
 | `SendPhoto(name, data, caption)` | an upload the bot can read back through `k.File` |
 | `ShareLocation(lat, lng)` | a location message |
 
@@ -88,6 +89,23 @@ ada.Expect(
 
 By default only the newest keyboard in the chat answers a tap. `WithScrollback()`
 lets a tap reach buttons on older messages.
+
+### The other keyboard
+
+Inline buttons ride on a message. The reply keyboard — the hard keys under the
+compose box — belongs to the chat: it stays up until the bot replaces or removes
+it, however many messages go by in between. `Menu()` is what is up now, and
+`Press` types a key's label the way a real client does:
+
+```go
+ada.Menu()                  // [][]string{{"🔍 Search", "👤 Profile"}}
+ada.HasKey("🔍 Search")
+ada.Press("🔍 Search")      // reaches the bot as the label, sent as text
+```
+
+The two kinds share Telegram's `reply_markup` field but never each other's
+meaning: an inline keyboard leaves `Menu()` alone, and a hard key never shows up
+in `Buttons()`. A send the chat refuses changes neither.
 
 ## Groups and channels
 

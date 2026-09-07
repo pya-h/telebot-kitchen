@@ -56,14 +56,14 @@ func (m *Member) Tap(labelOrData string) {
 			k.tb.Errorf("kitchen: button %q sends no callback data, so tapping it does not reach the bot", labelOrData)
 			return
 		}
-		m.press(screen, button)
+		m.tap(screen, button)
 		return
 	}
 
 	k.tb.Errorf("kitchen: %s has no button %q on screen, found: %s", m, labelOrData, buttonLabels(reachable))
 }
 
-func (m *Member) press(screen models.Message, button Button) {
+func (m *Member) tap(screen models.Message, button Button) {
 	m.awaitFromNow()
 
 	sender := m.user.identity()
@@ -77,6 +77,16 @@ func (m *Member) press(screen models.Message, button Button) {
 		ChatInstance: fmt.Sprintf("chat-%d", m.chat.id),
 		Data:         button.Data,
 	}})
+}
+
+// Press pushes a key on the reply keyboard, which reaches the bot as the label
+// sent as plain text — a hard key is a shortcut for typing it.
+func (m *Member) Press(label string) {
+	if !m.HasKey(label) {
+		m.kitchen().tb.Errorf("kitchen: %s has no key %q under the compose box, found: %s", m, label, keyLabels(m.Menu()))
+		return
+	}
+	m.Send(label)
 }
 
 func (m *Member) SendPhoto(name string, data []byte, caption string) {

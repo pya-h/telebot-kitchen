@@ -93,6 +93,37 @@ func (p params) markup() (*models.InlineKeyboardMarkup, error) {
 	return markup, nil
 }
 
+// menu reads the other kind of keyboard: the hard keys under the compose box.
+// changed is false when the message says nothing about them, which leaves
+// whatever is up in place.
+func (p params) menu() (rows [][]string, changed bool, err error) {
+	raw, ok := p["reply_markup"]
+	if !ok || raw == "" {
+		return nil, false, nil
+	}
+	// The two kinds share the field but not a single key, so neither reads as
+	// the other and one unmarshal each is enough.
+	var markup struct {
+		Keyboard [][]models.KeyboardButton `json:"keyboard"`
+		Remove   bool                      `json:"remove_keyboard"`
+	}
+	if err := json.Unmarshal([]byte(raw), &markup); err != nil {
+		return nil, false, badRequest("reply_markup")
+	}
+	if markup.Remove || len(markup.Keyboard) == 0 {
+		return nil, markup.Remove, nil
+	}
+
+	rows = make([][]string, len(markup.Keyboard))
+	for i, row := range markup.Keyboard {
+		rows[i] = make([]string, len(row))
+		for j, key := range row {
+			rows[i][j] = key.Text
+		}
+	}
+	return rows, true, nil
+}
+
 func (p params) flag(name string) bool { return p[name] == "true" }
 
 func (p params) number(name string) int {
