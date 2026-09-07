@@ -135,6 +135,33 @@ as is a message that had no media to begin with. Editing to the file already
 there is `message is not modified`, the same as any other edit that changes
 nothing.
 
+### Albums
+
+`sendMediaGroup` is one call and several messages, which a client shows as one
+album. Each carries the same group, which is what a bot reads them by:
+
+```go
+sent := k.History(chat)
+sent[0].Album == sent[1].Album   // and empty on anything sent on its own
+```
+
+A member sends one back with `SendAlbum`, built from the four kinds Telegram
+groups:
+
+```go
+ada.SendAlbum(
+    kitchen.Photo("one.jpg", first, "us"),
+    kitchen.Photo("two.jpg", second, ""),
+    kitchen.Video("three.mp4", clip, ""),
+)
+```
+
+The whole album lands in the chat before any of it reaches the bot, the way
+Telegram hands one over — so a bot that answers the first file cannot have its
+reply stepped over by the last. Between two and ten files, photos and videos
+together, and documents and audio each to themselves: mixing them is refused
+here rather than in production.
+
 `sendChatAction` is answered but lands nowhere: a client shows the action and
 drops it, so the only place to read one back is the call log.
 
@@ -258,7 +285,7 @@ Two sources, one vocabulary.
 **The screen** is what the user would see: `ada.Screen()` for the newest message,
 `ada.History()` for the whole chat, `k.History(chatID)` for any chat. In a shared
 chat the same verbs hang off `ada.In(team)`. A `Message`
-carries `Text`, `From`, `Keyboard`, `Media`, `ForwardedFrom`, `Sent`, and prints
+carries `Text`, `From`, `Keyboard`, `Media`, `Album`, `ForwardedFrom`, `Sent`, and prints
 itself the way a client shows it.
 
 **The record** is every call the bot made: `k.Calls()`, filtered with

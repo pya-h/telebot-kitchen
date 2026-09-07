@@ -132,23 +132,32 @@ func (m *Member) ShareLocation(latitude, longitude float64) {
 	m.say(models.Message{Location: &models.Location{Latitude: latitude, Longitude: longitude}})
 }
 
-func (m *Member) say(msg models.Message) {
+func (m *Member) say(msg models.Message) { m.sayAll(msg) }
+
+// The whole batch lands before any of it is delivered, so a reply to the first
+// message cannot be stepped over by the id of the last.
+func (m *Member) sayAll(msgs ...models.Message) {
 	if m.chat.kind == models.ChatTypeChannel {
 		m.kitchen().tb.Errorf("kitchen: %s cannot speak, a channel carries posts rather than what its subscribers say", m)
 		return
 	}
 
 	sender := m.user.identity()
-	msg.From = &sender
 
 	// Speaking somewhere puts you there; Join is what announces it.
 	if !m.kitchen().world.speaking(m.chat.id, sender) {
 		m.kitchen().tb.Errorf("kitchen: the bot restricted %s, so nothing they say arrives", m)
 		return
 	}
-	sent := m.kitchen().world.add(m.chat.id, msg)
-	m.awaiting = sent.ID
-	m.kitchen().deliver(models.Update{Message: &sent})
+	sent := make([]models.Message, len(msgs))
+	for i, msg := range msgs {
+		msg.From = &sender
+		sent[i] = m.kitchen().world.add(m.chat.id, msg)
+	}
+	m.awaiting = sent[len(sent)-1].ID
+	for i := range sent {
+		m.kitchen().deliver(models.Update{Message: &sent[i]})
+	}
 }
 
 // String names the member for a failure; the chat only when it is not their own.
@@ -193,7 +202,6 @@ func (m *Member) Leave() {
 	m.announce(who, standing{status: models.ChatMemberTypeLeft}, &models.Message{LeftChatMember: &who})
 }
 
-// Promote makes somebody an administrator, with every right when none are named.
 func (m *Member) Promote(u *User, rights ...Right) {
 	m.announce(u.identity(), standing{status: models.ChatMemberTypeAdministrator, rights: granted(rights)}, nil)
 }
@@ -202,7 +210,6 @@ func (m *Member) Demote(u *User) {
 	m.announce(u.identity(), standing{status: models.ChatMemberTypeMember}, nil)
 }
 
-// The bot's own standing, which reaches it as my_chat_member.
 func (m *Member) PromoteBot(rights ...Right) {
 	m.announceBot(standing{status: models.ChatMemberTypeAdministrator, rights: granted(rights)})
 }

@@ -59,6 +59,7 @@ updates by webhook or through a "handle one update" entry point.
   data; the kitchen finds them on the current screen for you.
 - **Both keyboards** — inline buttons on a message, and the reply keyboard that
   outlives it: `Menu()` says what is up, `Press` pushes a key.
+- **Albums** — one call, several messages under one group, sent and received.
 - **Rich input** — text, commands, locations, and every kind of media a chat
   carries: photos, voice, audio, video, animations, documents, stickers and
   video notes, in both directions.

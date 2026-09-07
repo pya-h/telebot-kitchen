@@ -34,6 +34,7 @@ type world struct {
 
 	nextUpdateID atomic.Int64
 	nextQueryID  atomic.Int64
+	nextAlbumID  atomic.Int64
 }
 
 func newWorld(clock *Clock, bot models.User) *world {
@@ -43,6 +44,8 @@ func newWorld(clock *Clock, bot models.User) *world {
 func (w *world) nextUpdate() int64 { return w.nextUpdateID.Add(1) }
 
 func (w *world) nextQuery() string { return "query-" + strconv.FormatInt(w.nextQueryID.Add(1), 10) }
+
+func (w *world) nextAlbum() string { return "album-" + strconv.FormatInt(w.nextAlbumID.Add(1), 10) }
 
 // chatAt is for an id nobody described, which only a private chat can be.
 func (w *world) chatAt(id int64) *chat {
@@ -352,7 +355,6 @@ func (w *world) roster(chatID int64) []int64 {
 	return ids
 }
 
-// setMenu raises the chat's reply keyboard, or takes it away when rows is nil.
 func (w *world) setMenu(chatID int64, rows [][]string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -429,8 +431,6 @@ func (w *world) find(chatID int64, messageID int) *models.Message {
 	return nil
 }
 
-// edit reports whether the message exists; mutate returns the error Telegram
-// would raise, so an edit that changes nothing rejects the same way.
 func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Message) error) (edited models.Message, found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -446,7 +446,6 @@ func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Mes
 	return *m, true, nil
 }
 
-// remove reports whether the message exists, and why the bot may not take it back.
 func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -469,8 +468,6 @@ func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, er
 	return false, nil
 }
 
-// keyboards returns the chat's messages that still carry an inline keyboard,
-// newest first; at most limit of them, or every one when limit is zero.
 func (w *world) keyboards(chatID int64, limit int) []models.Message {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

@@ -21,6 +21,7 @@ type Message struct {
 	FromBot       bool
 	ForwardedFrom string
 	Media         string
+	Album         string // the group a message arrived in, when it arrived in one
 	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
 	Sent          time.Time
 	Keyboard      [][]Button
@@ -111,6 +112,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		FromBot:       m.From != nil && m.From.ID == k.botUser().ID,
 		ForwardedFrom: forwardedFrom(m.ForwardOrigin),
 		Media:         media,
+		Album:         m.MediaGroupID,
 		Event:         event,
 		Sent:          time.Unix(int64(m.Date), 0).UTC(),
 		Keyboard:      buttonsOf(m.ReplyMarkup),
