@@ -62,6 +62,10 @@ func TestNothingIsChargedUntilTheBotApproves(t *testing.T) {
 	if ledger := k.Payments(); len(ledger) != 1 || ledger[0].ChargeID != paid.ChargeID {
 		t.Errorf("ledger = %v, want the one charge", ledger)
 	}
+	// Ids count per kind, so the first charge of a run is always the first.
+	if paid.ChargeID != "charge-1" {
+		t.Errorf("charge id = %q, want it counted from one", paid.ChargeID)
+	}
 
 	// The bot has to be told, or it has nothing to hand the grant out on.
 	told := seen.all()
@@ -312,5 +316,77 @@ func TestAnInvoiceNeedsWhatTelegramAsksFor(t *testing.T) {
 			!strings.Contains(reply.Description, missing) {
 			t.Errorf("without %s = %+v, want a refusal naming it", missing, reply)
 		}
+	}
+}
+
+// A bot that says something while approving the checkout has still said it: the
+// payment landing afterwards must not step over the reply.
+func TestAReplySentDuringCheckoutIsStillRead(t *testing.T) {
+	k := New(t)
+	b := syncBot(t, k, func(ctx context.Context, c *bot.Bot, u *models.Update) {
+		if u.PreCheckoutQuery == nil {
+			return
+		}
+		c.SendMessage(ctx, &bot.SendMessageParams{
+			ChatID: u.PreCheckoutQuery.From.ID, Text: "one moment",
+		})
+		c.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{
+			PreCheckoutQueryID: u.PreCheckoutQuery.ID, OK: true,
+		})
+	})
+	k.DeliverTo(b.ProcessUpdate)
+	ada := k.User(7)
+
+	invoiceFor(t, b, ada.ChatID())
+	if _, ok := ada.Pay(); !ok {
+		t.Fatal("the payment did not go through")
+	}
+	ada.Expect(TextIs("one moment"))
+	ada.ExpectNothingMore()
+}
+
+// The refund belongs where the charge was taken, not in whatever chat shares the
+// payer's id: a bot selling in a group has to show the money going back there.
+func TestARefundLandsWhereTheChargeWasTaken(t *testing.T) {
+	k := New(t)
+	b, _ := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
+	team := k.Group(-42, "Standup")
+	ada := k.User(7)
+
+	invoiceFor(t, b, team.ID())
+	paid, ok := ada.In(team).Pay()
+	if !ok || paid.ChatID != team.ID() {
+		t.Fatalf("payment = %+v %v, want it charged in the group", paid, ok)
+	}
+
+	if _, err := b.RefundStarPayment(context.Background(), &bot.RefundStarPaymentParams{
+		UserID: ada.ID(), TelegramPaymentChargeID: paid.ChargeID,
+	}); err != nil {
+		t.Fatalf("RefundStarPayment: %v", err)
+	}
+
+	if last := team.History(); last[len(last)-1].Event != "refunded" {
+		t.Errorf("group = %v, want the refund recorded there", last)
+	}
+	if aside := k.History(ada.ID()); len(aside) != 0 {
+		t.Errorf("private chat = %v, want the refund nowhere near it", aside)
+	}
+}
+
+func TestNobodyPaysInAChannel(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	k.User(7).In(news).Pay()
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "cannot pay in a channel") {
+		t.Errorf("errors = %v, want one about a channel", errs)
+	}
+	if ledger := k.Payments(); len(ledger) != 0 {
+		t.Errorf("ledger = %v, want it empty", ledger)
 	}
 }

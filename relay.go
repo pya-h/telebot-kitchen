@@ -26,7 +26,7 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	markup, err := p.markup()
+	markup, err := k.accept(p, target)
 	if err != nil {
 		return nil, err
 	}

@@ -11,6 +11,7 @@ import (
 // given it back. A grant a refund should revoke is tested against Refunded.
 type Payment struct {
 	ChargeID string
+	ChatID   int64
 	UserID   int64
 	Payload  string
 	Amount   int
@@ -21,11 +22,10 @@ type Payment struct {
 // invoice is what a bot asked for. Telegram's Invoice object carries no
 // payload, so the kitchen keeps its own record of what a message would charge.
 type invoice struct {
-	chatID    int64
-	messageID int
-	payload   string
-	currency  string
-	amount    int
+	chatID   int64
+	payload  string
+	currency string
+	amount   int
 }
 
 type checkout struct {
@@ -46,13 +46,14 @@ type entry struct {
 }
 
 type ledger struct {
-	mu       sync.Mutex
-	next     int64
-	invoices []invoice
-	pending  map[string]*checkout
-	charges  []*Payment
-	byCharge map[string]*Payment
-	entries  []entry
+	mu        sync.Mutex
+	checkouts int64
+	refunds   int64
+	invoices  []invoice
+	pending   map[string]*checkout
+	charges   []*Payment
+	byCharge  map[string]*Payment
+	entries   []entry
 }
 
 func newLedger() *ledger {
@@ -81,8 +82,8 @@ func (l *ledger) ask(inv invoice, who models.User) string {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.next++
-	id := fmt.Sprintf("checkout-%d", l.next)
+	l.checkouts++
+	id := fmt.Sprintf("checkout-%d", l.checkouts)
 	l.pending[id] = &checkout{invoice: inv, user: who}
 	return id
 }
@@ -114,9 +115,9 @@ func (l *ledger) charge(c checkout, at int) Payment {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	l.next++
 	paid := &Payment{
-		ChargeID: fmt.Sprintf("charge-%d", l.next),
+		ChargeID: fmt.Sprintf("charge-%d", len(l.charges)+1),
+		ChatID:   c.invoice.chatID,
 		UserID:   c.user.ID,
 		Payload:  c.invoice.payload,
 		Amount:   c.invoice.amount,
@@ -140,9 +141,9 @@ func (l *ledger) refund(userID int64, chargeID string, at int, who models.User) 
 		return Payment{}, requestError("CHARGE_ALREADY_REFUNDED")
 	}
 	paid.Refunded = true
-	l.next++
+	l.refunds++
 	l.entries = append(l.entries, entry{
-		id: fmt.Sprintf("refund-%d", l.next), amount: -paid.Amount, date: at,
+		id: fmt.Sprintf("refund-%d", l.refunds), amount: -paid.Amount, date: at,
 		user: who, payload: paid.Payload, back: true,
 	})
 	return *paid, nil
@@ -246,8 +247,7 @@ func (k *Kitchen) sendInvoice(p params) (any, error) {
 		},
 	})
 	k.payments.bill(invoice{
-		chatID: chatID, messageID: sent.ID,
-		payload: p["payload"], currency: p["currency"], amount: amount,
+		chatID: chatID, payload: p["payload"], currency: p["currency"], amount: amount,
 	})
 	return sent, nil
 }
@@ -284,7 +284,7 @@ func (k *Kitchen) refundStarPayment(p params) (any, error) {
 
 	// The chat records it, but no update comes back: what the bot does is never
 	// delivered to it, the same as its own pin.
-	k.world.add(userID, models.Message{RefundedPayment: &models.RefundedPayment{
+	k.world.add(paid.ChatID, models.Message{RefundedPayment: &models.RefundedPayment{
 		Currency:                paid.Currency,
 		TotalAmount:             paid.Amount,
 		InvoicePayload:          paid.Payload,
@@ -302,6 +302,11 @@ func (k *Kitchen) getStarTransactions(p params) (any, error) {
 // which is the order Telegram uses and the order a grant has to be written in.
 func (m *Member) Pay() (Payment, bool) {
 	k := m.kitchen()
+	if m.chat.kind == models.ChatTypeChannel {
+		k.tb.Errorf("kitchen: %s cannot pay in a channel, where nothing they do becomes a message", m)
+		return Payment{}, false
+	}
+
 	inv, billed := k.payments.newest(m.chat.id)
 	if !billed {
 		k.tb.Errorf("kitchen: %s has no invoice to pay", m)
@@ -330,6 +335,8 @@ func (m *Member) Pay() (Payment, bool) {
 	}
 
 	paid := k.payments.charge(answer, int(k.clock.Now().Unix()))
+	// No watermark move: the anchor was set before the checkout, and anything
+	// the bot said while approving is still a reply waiting to be read.
 	sent := k.world.add(m.chat.id, models.Message{
 		From: &sender,
 		SuccessfulPayment: &models.SuccessfulPayment{
@@ -339,7 +346,6 @@ func (m *Member) Pay() (Payment, bool) {
 			TelegramPaymentChargeID: paid.ChargeID,
 		},
 	})
-	m.awaiting = sent.ID
 	k.deliver(models.Update{Message: &sent})
 	return paid, true
 }

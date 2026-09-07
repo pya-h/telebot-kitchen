@@ -107,7 +107,9 @@ ada.Press("🔍 Search")      // reaches the bot as the label, sent as text
 
 The two kinds share Telegram's `reply_markup` field but never each other's
 meaning: an inline keyboard leaves `Menu()` alone, and a hard key never shows up
-in `Buttons()`. A send the chat refuses changes neither.
+in `Buttons()`. A send the chat refuses changes neither, and a `copyMessage`
+raises one the way any other send does. In a shared chat the keyboard belongs to
+the chat rather than to a person, so Telegram's `selective` is not modelled.
 
 ### Media, both ways
 

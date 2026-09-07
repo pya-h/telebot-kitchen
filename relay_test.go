@@ -250,3 +250,24 @@ func TestAForwardedPostNamesTheChannelItCameFrom(t *testing.T) {
 		t.Errorf("chat = %v, want the post attributed to the channel", landed)
 	}
 }
+
+// A copy is a send, so it raises the hard keyboard the same way one does.
+func TestACopyCarriesTheKeyboardUnderTheComposeBox(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ada := k.User(testChatID)
+	ada.Send("hello")
+
+	if _, err := b.CopyMessage(context.Background(), &bot.CopyMessageParams{
+		ChatID: testChatID, FromChatID: testChatID, MessageID: ada.Screen().ID,
+		ReplyMarkup: &models.ReplyKeyboardMarkup{
+			Keyboard: [][]models.KeyboardButton{{{Text: "Search"}}},
+		},
+	}); err != nil {
+		t.Fatalf("CopyMessage: %v", err)
+	}
+	if !ada.HasKey("Search") {
+		t.Errorf("menu = %v, want the copy to have raised it", ada.Menu())
+	}
+}
