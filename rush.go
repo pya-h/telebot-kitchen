@@ -200,7 +200,9 @@ func (r Rush) report(tb TB, broken []brokenOrder, ran, concurrency int, seed int
 	for _, o := range broken {
 		fmt.Fprintf(&out, "\n  order %d:\n", o.n)
 		for _, err := range o.errs {
-			out.WriteString("    " + strings.ReplaceAll(err, "\n", "\n    ") + "\n")
+			out.WriteString("    ")
+			out.WriteString(strings.ReplaceAll(err, "\n", "\n    "))
+			out.WriteString("\n")
 		}
 	}
 	fmt.Fprintf(&out, "\n  replay it: go test -run <this test> -kitchen.stress -kitchen.seed=%d -kitchen.order=%d",

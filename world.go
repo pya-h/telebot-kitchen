@@ -407,7 +407,6 @@ func (w *world) add(chatID int64, m models.Message) models.Message {
 	m.ID = c.nextMessageID
 	m.Chat = c.info
 	m.Date = int(w.clock.Now().Unix())
-	// A message in a channel is published by the channel.
 	if c.info.Type == models.ChatTypeChannel {
 		posted := c.info
 		m.SenderChat = &posted

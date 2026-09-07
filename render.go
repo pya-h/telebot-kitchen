@@ -28,7 +28,9 @@ func (m Message) String() string {
 			if i > 0 {
 				out.WriteString(" ")
 			}
-			out.WriteString("[" + button.Label + "]")
+			out.WriteString("[")
+			out.WriteString(button.Label)
+			out.WriteString("]")
 		}
 	}
 
