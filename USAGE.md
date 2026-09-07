@@ -403,6 +403,42 @@ shows where it landed, not every version it passed through. Use it to catch a
 change in wording or layout, and step assertions to catch a change mid-flow.
 `k.ExpectGolden(path, text)` does the same for anything else you can render.
 
+## Paying with Stars
+
+An invoice the bot sends is paid the way Telegram sequences it: the bot is asked
+first, and the money only moves if it says yes.
+
+```go
+ada.Pay()                   // pays the newest invoice in the chat
+```
+
+`Pay` hands the bot a `pre_checkout_query`, waits for its
+`answerPreCheckoutQuery`, and only then delivers the `successful_payment` — so a
+bot that refuses the checkout charges nothing, and a bot that never answers
+fails the test rather than quietly taking the money. It returns the charge and
+whether it went through:
+
+```go
+paid, ok := ada.Pay()
+require.True(t, ok)
+require.Equal(t, "boost:30d", paid.Payload)
+```
+
+`k.Payments()` is every charge the bot has taken, oldest first, each saying
+whether it has since been given back. That last flag is the one worth asserting:
+a grant handed out on a charge must not survive `refundStarPayment`.
+
+```go
+bot.RefundStarPayment(ctx, ...)      // the bot's own doing
+require.True(t, k.Payments()[0].Refunded)
+require.False(t, grantedTo(ada))     // buy → granted → refund → keep is the bug
+```
+
+A refund is the bot's own action, so it is recorded in the chat and comes back
+as no update, the same rule its own message, edit and pin follow. The Stars
+ledger reads back through `getStarTransactions`, newest first, with a refund as
+a line of its own going the other way.
+
 ## Fault injection
 
 Make the fake API refuse a call, and watch what the bot does about it:

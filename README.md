@@ -64,6 +64,8 @@ updates by webhook or through a "handle one update" entry point.
   video notes, in both directions.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.
+- **Stars payments** — invoices, the pre-checkout handshake and refunds, with a
+  ledger that says whether a charge was given back.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts
   on demand to exercise retry, backoff, and rate-limit handling.
 - **No sleeps** — wait for what the bot did, not for the clock; replies sent

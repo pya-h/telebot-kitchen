@@ -21,7 +21,7 @@ type Message struct {
 	FromBot       bool
 	ForwardedFrom string
 	Media         string
-	Event         string // "joined", "left", "pinned" or "moved"
+	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
 	Sent          time.Time
 	Keyboard      [][]Button
 }
@@ -91,6 +91,16 @@ func (k *Kitchen) view(m models.Message) Message {
 		event = "pinned"
 	case m.MigrateToChatID != 0 || m.MigrateFromChatID != 0:
 		event = "moved"
+	case m.Invoice != nil:
+		event = "invoice"
+	case m.SuccessfulPayment != nil:
+		event = "paid"
+	case m.RefundedPayment != nil:
+		event = "refunded"
+	}
+	// A client shows an invoice by its title, and the message carries no text.
+	if m.Invoice != nil && text == "" {
+		text = m.Invoice.Title
 	}
 
 	return Message{

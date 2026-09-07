@@ -41,6 +41,10 @@ var apiMethods = map[string]apiMethod{
 	"editMessageReplyMarkup": (*Kitchen).editMessageReplyMarkup,
 	"deleteMessage":          (*Kitchen).deleteMessage,
 	"answerCallbackQuery":    (*Kitchen).answerCallbackQuery,
+	"sendInvoice":            (*Kitchen).sendInvoice,
+	"answerPreCheckoutQuery": (*Kitchen).answerPreCheckoutQuery,
+	"refundStarPayment":      (*Kitchen).refundStarPayment,
+	"getStarTransactions":    (*Kitchen).getStarTransactions,
 }
 
 type params map[string]string

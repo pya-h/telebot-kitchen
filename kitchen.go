@@ -40,6 +40,7 @@ type Kitchen struct {
 	files      *mediaStore
 	callbacks  *callbackLog
 	calls      *recorder
+	payments   *ledger
 	faults     *faultStore
 	activity   *activity
 
@@ -83,6 +84,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		files:       newMediaStore(),
 		callbacks:   newCallbackLog(),
 		calls:       newRecorder(),
+		payments:    newLedger(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,
