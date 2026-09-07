@@ -220,6 +220,18 @@ from a client is `news.Post(text)`, which the bot hears as `channel_post`.
 post, so a bot that mirrors a channel cannot chase its own tail. A member trying
 to speak there fails with that.
 
+A subscription gate reads `getChatMember`, and the kitchen answers it the way
+Telegram does: anyone the test has introduced who has not joined comes back
+`left`, the same as somebody who joined and then left. The error is kept for a
+user nobody ever created, and `chat not found` for a chat nobody registered — so
+a gate cannot pass by mistaking a missing record for a refusal.
+
+```go
+news := k.Channel(-1001234567890, "Releases")
+ada := k.User(7)          // known, but not subscribed: "left"
+ada.In(news).Join()       // subscribed: "member"
+```
+
 ## Reading what happened
 
 Two sources, one vocabulary.

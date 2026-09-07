@@ -70,6 +70,19 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 	return u
 }
 
+// knownUser is anyone the test has introduced, whether or not they have been
+// anywhere yet.
+func (k *Kitchen) knownUser(id int64) (models.User, bool) {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+
+	u, ok := k.users[id]
+	if !ok {
+		return models.User{}, false
+	}
+	return u.telegram(), true
+}
+
 // In returns this user inside a shared chat, with its own place in the
 // conversation. Speaking puts them on the roster; Join announces them.
 func (u *User) In(c *Chat) *Member {

@@ -257,3 +257,54 @@ func memberCountOf(t *testing.T, k *Kitchen, chatID int64) int {
 	callForm(t, k, "getChatMemberCount", map[string]string{"chat_id": fmt.Sprint(chatID)}).decode(t, &count)
 	return count
 }
+
+// A subscription gate reads the status. Telegram answers "left" for anyone it
+// knows who has not joined, and a bot that saw an error there would have to
+// decide what an error means — which is how a gate ends up failing open.
+func TestSomebodyWhoNeverJoinedIsLeftRatherThanMissing(t *testing.T) {
+	k := New(t)
+	news := k.Channel(-1002, "Releases")
+	k.User(7)
+
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeLeft {
+		t.Errorf("member = %+v, want them left rather than absent", member)
+	}
+}
+
+func TestSomebodyTelegramHasNeverHeardOfIsNotFound(t *testing.T) {
+	k := New(t)
+	news := k.Channel(-1002, "Releases")
+
+	reply := callForm(t, k, "getChatMember", map[string]string{
+		"chat_id": fmt.Sprint(news.ID()), "user_id": "999",
+	})
+	if reply.OK || !strings.Contains(reply.Description, "user not found") {
+		t.Errorf("reply = %+v, want a stranger to be missing", reply)
+	}
+}
+
+func TestAChatNobodyRegisteredIsNotFound(t *testing.T) {
+	k := New(t)
+	k.User(7)
+
+	reply := callForm(t, k, "getChatMember", map[string]string{
+		"chat_id": "-1002", "user_id": "7",
+	})
+	if reply.OK || !strings.Contains(reply.Description, "chat not found") {
+		t.Errorf("reply = %+v, want the chat to be the thing missing", reply)
+	}
+}
+
+func TestLeavingReadsTheSameAsNeverJoining(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+
+	ada := k.User(7).In(news)
+	ada.Join()
+	ada.Leave()
+
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeLeft {
+		t.Errorf("member = %+v, want left", member)
+	}
+}

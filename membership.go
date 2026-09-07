@@ -36,11 +36,20 @@ func (k *Kitchen) getChatMember(p params) (any, error) {
 		return nil, err
 	}
 
-	member, found := k.world.standingOf(chatID, userID)
-	if !found {
+	if _, found := k.world.info(chatID); !found {
+		return nil, requestError("chat not found")
+	}
+	if member, found := k.world.standingOf(chatID, userID); found {
+		return &member, nil
+	}
+
+	// Never having joined is a standing of its own, not a missing record. A gate
+	// reading an error where Telegram sends "left" would fail open.
+	who, known := k.knownUser(userID)
+	if !known {
 		return nil, requestError("user not found")
 	}
-	// By pointer: only then does the library encode the status.
+	member := standing{user: who, status: models.ChatMemberTypeLeft}.chatMember()
 	return &member, nil
 }
 
@@ -70,9 +79,6 @@ func (k *Kitchen) getChatMemberCount(p params) (any, error) {
 	return count, nil
 }
 
-// The calls that change somebody else's standing. Each one is the bot's own
-// doing, so nothing comes back to it: the kitchen never delivers a bot its own
-// actions, here any more than for a message it sends.
 func (k *Kitchen) banChatMember(p params) (any, error) {
 	return k.manage(p, RestrictMembers, "restrict a chat member", func(s *standing) {
 		s.status, s.silenced = models.ChatMemberTypeBanned, true
