@@ -34,7 +34,6 @@ var apiMethods = map[string]apiMethod{
 	"unpinChatMessage":       (*Kitchen).unpinChatMessage,
 	"unpinAllChatMessages":   (*Kitchen).unpinAllChatMessages,
 	"sendMessage":            (*Kitchen).sendMessage,
-	"sendPhoto":              (*Kitchen).sendPhoto,
 	"forwardMessage":         (*Kitchen).forwardMessage,
 	"copyMessage":            (*Kitchen).copyMessage,
 	"editMessageText":        (*Kitchen).editMessageText,

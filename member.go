@@ -90,8 +90,42 @@ func (m *Member) Press(label string) {
 }
 
 func (m *Member) SendPhoto(name string, data []byte, caption string) {
-	f := m.kitchen().files.add(name, data)
-	m.say(models.Message{Photo: m.kitchen().files.photoSizes(f.ID), Caption: caption})
+	m.upload(putPhoto, name, data, caption)
+}
+
+func (m *Member) SendVoice(name string, data []byte, caption string) {
+	m.upload(putVoice, name, data, caption)
+}
+
+func (m *Member) SendAudio(name string, data []byte, caption string) {
+	m.upload(putAudio, name, data, caption)
+}
+
+func (m *Member) SendVideo(name string, data []byte, caption string) {
+	m.upload(putVideo, name, data, caption)
+}
+
+func (m *Member) SendAnimation(name string, data []byte, caption string) {
+	m.upload(putAnimation, name, data, caption)
+}
+
+func (m *Member) SendDocument(name string, data []byte, caption string) {
+	m.upload(putDocument, name, data, caption)
+}
+
+// A sticker and a video note carry no caption, so neither verb takes one.
+func (m *Member) SendSticker(name string, data []byte) {
+	m.upload(putSticker, name, data, "")
+}
+
+func (m *Member) SendVideoNote(name string, data []byte) {
+	m.upload(putVideoNote, name, data, "")
+}
+
+func (m *Member) upload(put func(*models.Message, File), name string, data []byte, caption string) {
+	sent := models.Message{Caption: caption}
+	put(&sent, m.kitchen().files.add(name, data))
+	m.say(sent)
 }
 
 func (m *Member) ShareLocation(latitude, longitude float64) {

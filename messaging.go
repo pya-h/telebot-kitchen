@@ -47,29 +47,6 @@ func (k *Kitchen) accept(p params, chatID int64) (*models.InlineKeyboardMarkup, 
 	return markup, nil
 }
 
-func (k *Kitchen) sendPhoto(p params) (any, error) {
-	chatID, err := p.chatID()
-	if err != nil {
-		return nil, err
-	}
-	photo := p["photo"]
-	if photo == "" {
-		return nil, badRequest("photo")
-	}
-	markup, err := k.accept(p, chatID)
-	if err != nil {
-		return nil, err
-	}
-
-	sender := k.botUser()
-	return k.world.add(chatID, models.Message{
-		From:        &sender,
-		Photo:       k.files.photoSizes(photo),
-		Caption:     p["caption"],
-		ReplyMarkup: markup,
-	}), nil
-}
-
 func (k *Kitchen) editMessageText(p params) (any, error) {
 	text := p["text"]
 	if text == "" {
@@ -81,7 +58,7 @@ func (k *Kitchen) editMessageText(p params) (any, error) {
 	}
 
 	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
-		if len(m.Photo) > 0 {
+		if label, _ := mediaOf(m); label != "" {
 			return requestError("there is no text in the message to edit")
 		}
 		if m.Text == text && sameMarkup(m.ReplyMarkup, markup) {
@@ -100,7 +77,7 @@ func (k *Kitchen) editMessageCaption(p params) (any, error) {
 	}
 
 	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
-		if len(m.Photo) == 0 {
+		if _, captioned := mediaOf(m); !captioned {
 			return requestError("there is no caption in the message to edit")
 		}
 		if m.Caption == caption && sameMarkup(m.ReplyMarkup, markup) {

@@ -79,13 +79,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		text = m.Caption
 	}
 
-	media := ""
-	switch {
-	case len(m.Photo) > 0:
-		media = "photo"
-	case m.Location != nil:
-		media = "location"
-	}
+	media, _ := mediaOf(&m)
 
 	event := ""
 	switch {

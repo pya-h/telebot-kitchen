@@ -59,7 +59,9 @@ updates by webhook or through a "handle one update" entry point.
   data; the kitchen finds them on the current screen for you.
 - **Both keyboards** — inline buttons on a message, and the reply keyboard that
   outlives it: `Menu()` says what is up, `Press` pushes a key.
-- **Rich input** — text, commands, photos and locations.
+- **Rich input** — text, commands, locations, and every kind of media a chat
+  carries: photos, voice, audio, video, animations, documents, stickers and
+  video notes, in both directions.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts

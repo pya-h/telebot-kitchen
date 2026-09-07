@@ -73,6 +73,8 @@ positive, as Telegram's are, and a negative one is refused.
 | `Tap(labelOrData)` | presses an inline button by its visible label or its callback data |
 | `Press(label)` | pushes a key on the reply keyboard |
 | `SendPhoto(name, data, caption)` | an upload the bot can read back through `k.File` |
+| `SendVoice` / `SendAudio` / `SendVideo` / `SendAnimation` / `SendDocument` | the same shape, one per kind |
+| `SendSticker(name, data)` / `SendVideoNote(name, data)` | the two kinds Telegram allows no caption on |
 | `ShareLocation(lat, lng)` | a location message |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
@@ -106,6 +108,23 @@ ada.Press("🔍 Search")      // reaches the bot as the label, sent as text
 The two kinds share Telegram's `reply_markup` field but never each other's
 meaning: an inline keyboard leaves `Menu()` alone, and a hard key never shows up
 in `Buttons()`. A send the chat refuses changes neither.
+
+### Media, both ways
+
+The bot's `sendPhoto`, `sendVoice`, `sendAudio`, `sendVideo`, `sendAnimation`,
+`sendDocument`, `sendSticker` and `sendVideoNote` all land in the chat, and a
+transcript says which is which:
+
+```
+**Bot:** (voice) here it is
+**Ada:** (sticker)
+```
+
+Bytes go into the kitchen's file store, and the id the bot is handed reads back
+through `k.File(id)`. A bot re-sending an id it was given never uploads
+anything, and the file behind it stays the same one — which is what a relay
+does. `copyMessage` carries any of these across while stripping who sent it, so
+a two-way relay stays anonymous without the bot doing anything about it.
 
 ## Groups and channels
 

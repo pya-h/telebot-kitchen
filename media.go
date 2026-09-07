@@ -65,11 +65,14 @@ func (s *mediaStore) get(id string) (File, bool) {
 }
 
 // A file id the store never issued is one the bot re-sent, so it stays addressable.
-func (s *mediaStore) photoSizes(fileID string) []models.PhotoSize {
-	f, ok := s.get(fileID)
-	if !ok {
-		f = File{ID: fileID, UniqueID: "unique-" + fileID}
+func (s *mediaStore) fileOf(id string) File {
+	if f, ok := s.get(id); ok {
+		return f
 	}
+	return File{ID: id, UniqueID: "unique-" + id}
+}
+
+func photoSizes(f File) []models.PhotoSize {
 	sizes := make([]models.PhotoSize, len(photoLadder))
 	for i, dimension := range photoLadder {
 		sizes[i] = models.PhotoSize{

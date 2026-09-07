@@ -38,8 +38,8 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	copied.SenderChat = nil
 	copied.ForwardOrigin = nil
 	copied.ReplyMarkup = markup
-	if caption := p["caption"]; caption != "" && len(copied.Photo) > 0 {
-		copied.Caption = caption
+	if _, captioned := mediaOf(&copied); captioned && p["caption"] != "" {
+		copied.Caption = p["caption"]
 	}
 
 	sent := k.world.add(target, copied)
