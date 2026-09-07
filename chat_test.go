@@ -192,3 +192,28 @@ func TestAnIDKeepsTheKindItWasFirstGiven(t *testing.T) {
 		t.Errorf("handle is a %s, want it to agree with the chat that exists", again.kind)
 	}
 }
+
+// A migration that is refused must not half-happen: the chat it was asked to
+// become has no business existing, and the handle should name the real one.
+func TestAGroupMigratesOnlyOnce(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-42, "Standup")
+	k.User(7).In(team).Send("hi")
+
+	moved := team.MigrateToSupergroup(-1042)
+	again := team.MigrateToSupergroup(-1099)
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "already migrated to -1042") {
+		t.Errorf("errors = %v, want one naming where it went", errs)
+	}
+	if again.ID() != moved.ID() {
+		t.Errorf("second migration returned %d, want the supergroup it became", again.ID())
+	}
+	if _, registered := k.world.info(-1099); registered {
+		t.Error("the refused migration registered a chat nothing became")
+	}
+}

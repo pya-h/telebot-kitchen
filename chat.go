@@ -73,9 +73,14 @@ func (c *Chat) MigrateToSupergroup(id int64) *Chat {
 		return c
 	}
 
+	if already, gone := c.kitchen.world.migratedTo(c.id); gone {
+		c.kitchen.tb.Errorf("kitchen: %q has already migrated to %d", c.Title(), already)
+		return c.kitchen.Supergroup(already, c.Title())
+	}
+
 	moved := c.kitchen.Supergroup(id, c.Title())
 	if !c.kitchen.world.migrate(c.id, id) {
-		c.kitchen.tb.Errorf("kitchen: %q has already migrated", c.Title())
+		c.kitchen.tb.Errorf("kitchen: %q cannot migrate", c.Title())
 		return moved
 	}
 

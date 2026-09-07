@@ -315,6 +315,17 @@ func (w *world) migrate(from, to int64) bool {
 	return true
 }
 
+func (w *world) migratedTo(chatID int64) (int64, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok || c.movedTo == 0 {
+		return 0, false
+	}
+	return c.movedTo, true
+}
+
 // moved reports the refusal a call to a chat that has since become a supergroup
 // gets, carrying the id the bot should be using instead.
 func (w *world) moved(chatID string) error {
