@@ -225,3 +225,115 @@ func TestMediaTheChatRefusesIsNotSent(t *testing.T) {
 		t.Errorf("history = %v, want nothing to have landed", sent)
 	}
 }
+
+func editMedia(t *testing.T, k *Kitchen, messageID int, media string) apiReply {
+	t.Helper()
+	return callForm(t, k, "editMessageMedia", map[string]string{
+		"chat_id":    strconv.FormatInt(testChatID, 10),
+		"message_id": strconv.Itoa(messageID), "media": media,
+	})
+}
+
+func TestEditedMediaReplacesTheKindItCarried(t *testing.T) {
+	k := New(t)
+	sendMedia(t, k, testChatID, "sendPhoto", "photo", "caption", "before")
+
+	sent := k.History(testChatID)[0]
+	if reply := editMedia(t, k, sent.ID, `{"type":"video","media":"clip","caption":"after"}`); !reply.OK {
+		t.Fatalf("edit = %+v, want it served", reply)
+	}
+
+	// One message still, now a video: the old kind has to go, not sit alongside.
+	edited := k.History(testChatID)
+	if len(edited) != 1 || edited[0].Media != "video" || edited[0].Text != "after" {
+		t.Errorf("history = %v, want the one message carrying a video", edited)
+	}
+}
+
+func TestOnlyTheKindsTelegramCanEditIn(t *testing.T) {
+	k := New(t)
+	sendMedia(t, k, testChatID, "sendPhoto", "photo")
+	sent := k.History(testChatID)[0]
+
+	for _, kind := range []string{"sticker", "voice", "video_note", "location", ""} {
+		reply := editMedia(t, k, sent.ID, `{"type":"`+kind+`","media":"file-id"}`)
+		if reply.OK || !strings.Contains(reply.Description, "not supported") {
+			t.Errorf("editing in a %s = %+v, want it refused", kind, reply)
+		}
+	}
+}
+
+// A location reads like media in a transcript without being any, and a copy is
+// how one ends up in a message the bot owns and could otherwise edit.
+func TestThereHasToBeMediaToEdit(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
+		ChatID: testChatID, Text: "words",
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	here := k.User(testChatID)
+	here.ShareLocation(51.5, -0.12)
+	if _, err := b.CopyMessage(context.Background(), &bot.CopyMessageParams{
+		ChatID: testChatID, FromChatID: testChatID, MessageID: here.Screen().ID,
+	}); err != nil {
+		t.Fatalf("CopyMessage: %v", err)
+	}
+
+	for _, m := range k.History(testChatID) {
+		if m.From != "Kitchen" {
+			continue
+		}
+		reply := editMedia(t, k, m.ID, `{"type":"photo","media":"file-id"}`)
+		if reply.OK || !strings.Contains(reply.Description, "no media in the message") {
+			t.Errorf("editing %q = %+v, want it refused", m, reply)
+		}
+	}
+}
+
+func TestEditingMediaToWhatIsAlreadyThereChangesNothing(t *testing.T) {
+	k := New(t)
+	sendMedia(t, k, testChatID, "sendPhoto", "photo")
+	sent := k.History(testChatID)[0]
+
+	reply := editMedia(t, k, sent.ID, `{"type":"photo","media":"file-id"}`)
+	if reply.OK || !strings.Contains(reply.Description, "not modified") {
+		t.Errorf("edit = %+v, want the same media refused", reply)
+	}
+}
+
+// A file uploaded with the edit arrives under a field of its own, which the
+// media parameter points at instead of carrying.
+func TestEditedMediaTakesAnUploadedFile(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	sendMedia(t, k, testChatID, "sendPhoto", "photo")
+	sent := k.History(testChatID)[0]
+
+	if _, err := b.EditMessageMedia(context.Background(), &bot.EditMessageMediaParams{
+		ChatID:    testChatID,
+		MessageID: sent.ID,
+		Media: &models.InputMediaVideo{
+			Media:           "attach://clip.mp4",
+			MediaAttachment: strings.NewReader("mp4-bytes"),
+			Caption:         "the clip",
+		},
+	}); err != nil {
+		t.Fatalf("EditMessageMedia: %v", err)
+	}
+
+	edited := k.History(testChatID)
+	if len(edited) != 1 || edited[0].Media != "video" || edited[0].Text != "the clip" {
+		t.Fatalf("history = %v, want the uploaded video in its place", edited)
+	}
+
+	// The bytes have to be reachable through the id the message ended up with,
+	// or the edit kept the pointer instead of following it.
+	stored, _ := k.world.latest(testChatID)
+	if f, held := k.files.get(fileIn(&stored)); !held || string(f.Data) != "mp4-bytes" {
+		t.Errorf("file %q = %+v %v, want the bytes that came with the edit", fileIn(&stored), f, held)
+	}
+}

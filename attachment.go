@@ -21,9 +21,17 @@ var mediaKinds = []mediaKind{
 	{"sendVideoNote", "video_note", putVideoNote},
 }
 
+// The kinds an edit may put in a message's place: Telegram has no InputMedia
+// for a sticker, a voice note or a video note, so those three can only be sent.
+var editableKinds = map[string]func(*models.Message, File){}
+
 func init() {
 	for _, kind := range mediaKinds {
 		apiMethods[kind.method] = kind.send
+		switch kind.param {
+		case "photo", "video", "animation", "audio", "document":
+			editableKinds[kind.param] = kind.put
+		}
 	}
 }
 
@@ -74,6 +82,36 @@ func mediaOf(m *models.Message) (label string, captioned bool) {
 		return "location", false
 	}
 	return "", false
+}
+
+// fileIn is the id of the file a message carries, so an edit that would change
+// nothing can be refused the way Telegram refuses one.
+func fileIn(m *models.Message) string {
+	switch {
+	case len(m.Photo) > 0:
+		return m.Photo[len(m.Photo)-1].FileID
+	case m.Voice != nil:
+		return m.Voice.FileID
+	case m.Audio != nil:
+		return m.Audio.FileID
+	case m.Video != nil:
+		return m.Video.FileID
+	case m.Animation != nil:
+		return m.Animation.FileID
+	case m.Document != nil:
+		return m.Document.FileID
+	case m.Sticker != nil:
+		return m.Sticker.FileID
+	case m.VideoNote != nil:
+		return m.VideoNote.FileID
+	}
+	return ""
+}
+
+// Replacing media may change its kind, so the old one goes first.
+func clearMedia(m *models.Message) {
+	m.Photo, m.Voice, m.Audio, m.Video = nil, nil, nil, nil
+	m.Animation, m.Document, m.Sticker, m.VideoNote = nil, nil, nil, nil
 }
 
 func putPhoto(m *models.Message, f File) { m.Photo = photoSizes(f) }

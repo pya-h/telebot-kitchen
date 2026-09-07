@@ -41,6 +41,8 @@ var apiMethods = map[string]apiMethod{
 	"editMessageReplyMarkup": (*Kitchen).editMessageReplyMarkup,
 	"deleteMessage":          (*Kitchen).deleteMessage,
 	"answerCallbackQuery":    (*Kitchen).answerCallbackQuery,
+	"sendChatAction":         (*Kitchen).sendChatAction,
+	"editMessageMedia":       (*Kitchen).editMessageMedia,
 	"sendInvoice":            (*Kitchen).sendInvoice,
 	"answerPreCheckoutQuery": (*Kitchen).answerPreCheckoutQuery,
 	"refundStarPayment":      (*Kitchen).refundStarPayment,
@@ -125,6 +127,15 @@ func (p params) menu() (rows [][]string, changed bool, err error) {
 		}
 	}
 	return rows, true, nil
+}
+
+// A file uploaded alongside a JSON parameter is pointed at rather than carried,
+// and arrives under a form field of its own.
+func (p params) attached(ref string) string {
+	if name, found := strings.CutPrefix(ref, "attach://"); found {
+		return p[name]
+	}
+	return ref
 }
 
 func (p params) flag(name string) bool { return p[name] == "true" }

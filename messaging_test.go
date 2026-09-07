@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -325,4 +326,44 @@ func mustSend(t *testing.T, b *bot.Bot, text string) *models.Message {
 		t.Fatalf("SendMessage %q: %v", text, err)
 	}
 	return m
+}
+
+func TestAChatActionLandsNowhereButTheCallLog(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+
+	if _, err := b.SendChatAction(context.Background(), &bot.SendChatActionParams{
+		ChatID: testChatID, Action: models.ChatActionTyping,
+	}); err != nil {
+		t.Fatalf("SendChatAction: %v", err)
+	}
+
+	if sent := k.History(testChatID); len(sent) != 0 {
+		t.Errorf("history = %v, want the chat untouched", sent)
+	}
+	k.Expect(Method("sendChatAction"), Param("action", "typing"))
+}
+
+func TestAnActionTelegramDoesNotKnowIsRefused(t *testing.T) {
+	k := New(t)
+	reply := callForm(t, k, "sendChatAction", map[string]string{
+		"chat_id": strconv.FormatInt(testChatID, 10), "action": "juggling",
+	})
+	if reply.OK || !strings.Contains(reply.Description, "wrong parameter action") {
+		t.Errorf("reply = %+v, want the action refused", reply)
+	}
+}
+
+func TestAChatActionNeedsTheBotToBeThere(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-42, "Standup")
+	k.User(7).In(team).RemoveBot()
+
+	reply := callForm(t, k, "sendChatAction", map[string]string{
+		"chat_id": "-42", "action": "typing",
+	})
+	if reply.OK || !strings.Contains(reply.Description, "was kicked") {
+		t.Errorf("reply = %+v, want it refused like any other send", reply)
+	}
 }

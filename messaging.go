@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"reflect"
+	"slices"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -88,6 +89,39 @@ func (k *Kitchen) editMessageCaption(p params) (any, error) {
 	})
 }
 
+func (k *Kitchen) editMessageMedia(p params) (any, error) {
+	var replacement struct {
+		Type    string `json:"type"`
+		Media   string `json:"media"`
+		Caption string `json:"caption"`
+	}
+	if err := p.decode("media", &replacement); err != nil || replacement.Media == "" {
+		return nil, badRequest("media")
+	}
+	put, editable := editableKinds[replacement.Type]
+	if !editable {
+		return nil, requestError("type of the media to edit is not supported")
+	}
+	markup, err := p.markup()
+	if err != nil {
+		return nil, err
+	}
+
+	file := k.files.fileOf(p.attached(replacement.Media))
+	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
+		if label, _ := mediaOf(m); label == "" || m.Location != nil {
+			return requestError("there is no media in the message to edit")
+		}
+		if fileIn(m) == file.ID && m.Caption == replacement.Caption && sameMarkup(m.ReplyMarkup, markup) {
+			return errNotModified
+		}
+		clearMedia(m)
+		put(m, file)
+		m.Caption, m.ReplyMarkup = replacement.Caption, markup
+		return nil
+	})
+}
+
 func (k *Kitchen) editMessageReplyMarkup(p params) (any, error) {
 	markup, err := p.markup()
 	if err != nil {
@@ -101,6 +135,26 @@ func (k *Kitchen) editMessageReplyMarkup(p params) (any, error) {
 		m.ReplyMarkup = markup
 		return nil
 	})
+}
+
+var chatActions = []string{
+	"typing", "upload_photo", "record_video", "upload_video", "record_voice",
+	"upload_voice", "upload_document", "choose_sticker", "find_location",
+	"record_video_note", "upload_video_note",
+}
+
+func (k *Kitchen) sendChatAction(p params) (any, error) {
+	chatID, err := p.chatID()
+	if err != nil {
+		return nil, err
+	}
+	if !slices.Contains(chatActions, p["action"]) {
+		return nil, requestError("wrong parameter action in request")
+	}
+	if err := k.world.mayPost(chatID); err != nil {
+		return nil, err
+	}
+	return true, nil
 }
 
 func (k *Kitchen) deleteMessage(p params) (any, error) {

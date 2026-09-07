@@ -126,6 +126,23 @@ anything, and the file behind it stays the same one — which is what a relay
 does. `copyMessage` carries any of these across while stripping who sent it, so
 a two-way relay stays anonymous without the bot doing anything about it.
 
+`editMessageMedia` swaps what a message carries, kind and all — a photo becomes
+a video, and the old one goes rather than sitting alongside it. Telegram edits
+five of the eight in, so a sticker, a voice note and a video note are refused,
+as is a message that had no media to begin with. Editing to the file already
+there is `message is not modified`, the same as any other edit that changes
+nothing.
+
+`sendChatAction` is answered but lands nowhere: a client shows the action and
+drops it, so the only place to read one back is the call log.
+
+```go
+k.Expect(kitchen.Method("sendChatAction"), kitchen.Param("action", "typing"))
+```
+
+An action Telegram has no name for is refused, and one sent to a chat the bot
+has been thrown out of fails the way any other send there would.
+
 ## Groups and channels
 
 A user's private chat is theirs alone. A shared one is registered first, with an
