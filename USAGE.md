@@ -123,10 +123,18 @@ transcript says which is which:
 ```
 
 Bytes go into the kitchen's file store, and the id the bot is handed reads back
-through `k.File(id)`. A bot re-sending an id it was given never uploads
-anything, and the file behind it stays the same one — which is what a relay
-does. `copyMessage` carries any of these across while stripping who sent it, so
-a two-way relay stays anonymous without the bot doing anything about it.
+through `k.File(id)`. A received message names the file it carries, so the same
+holds from the other end:
+
+```go
+got := bob.History()[0]
+f, _ := k.File(got.FileID)   // the bytes ada uploaded, unchanged
+```
+
+A bot re-sending an id it was given never uploads anything, and the file behind
+it stays the same one — which is what a relay does. `copyMessage` carries any of
+these across while stripping who sent it, so a two-way relay stays anonymous
+without the bot doing anything about it.
 
 `editMessageMedia` swaps what a message carries, kind and all — a photo becomes
 a video, and the old one goes rather than sitting alongside it. Telegram edits
@@ -285,7 +293,7 @@ Two sources, one vocabulary.
 **The screen** is what the user would see: `ada.Screen()` for the newest message,
 `ada.History()` for the whole chat, `k.History(chatID)` for any chat. In a shared
 chat the same verbs hang off `ada.In(team)`. A `Message`
-carries `Text`, `From`, `Keyboard`, `Media`, `Album`, `ForwardedFrom`, `Sent`, and prints
+carries `Text`, `From`, `Keyboard`, `Media`, `FileID`, `Album`, `ForwardedFrom`, `Sent`, and prints
 itself the way a client shows it.
 
 **The record** is every call the bot made: `k.Calls()`, filtered with
@@ -344,6 +352,12 @@ waiting for. `ExpectNo`, `ExpectCount` and `ExpectNothingMore` settle for you,
 because absence is only knowable once the bot stops working.
 
 `WithWaitTimeout(d)` caps the wait; it defaults to two seconds.
+
+That goroutine each is also why several messages sent back to back can reach the
+bot in any order, and so come out of a relay in any order. The kitchen delivers
+them in the order they were sent; what happens next is the library's. Assert on
+what arrived rather than on its position, or build the bot with
+`bot.WithNotAsyncHandlers()` when the order is the thing under test.
 
 ## Scenarios
 

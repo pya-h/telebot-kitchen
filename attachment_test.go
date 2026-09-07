@@ -186,6 +186,38 @@ func TestAResentFileIDStaysTheSameFile(t *testing.T) {
 	}
 }
 
+// A relay's whole point is that the same file comes out the other side, so a
+// received message has to name the one it carries: a test holds nothing else to
+// reach the bytes by.
+func TestAReceivedMessageNamesItsFile(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ada, bob := k.User(7), k.User(8)
+
+	ada.SendVoice("note.ogg", []byte("ogg"), "listen")
+	sent := ada.History()[0]
+
+	if _, err := b.CopyMessage(context.Background(), &bot.CopyMessageParams{
+		ChatID: bob.ChatID(), FromChatID: ada.ChatID(), MessageID: sent.ID,
+	}); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	got := bob.History()[0]
+	if got.FileID == "" || got.FileID != sent.FileID {
+		t.Errorf("bob received file %q, ada sent %q", got.FileID, sent.FileID)
+	}
+	if f, ok := k.File(got.FileID); !ok || string(f.Data) != "ogg" {
+		t.Errorf("file = %+v, want the bytes ada sent", f)
+	}
+
+	ada.Send("plain")
+	if named := ada.History()[1].FileID; named != "" {
+		t.Errorf("a message carrying no file named %q", named)
+	}
+}
+
 // A copy may reword what it carries, but only where the kind takes a caption.
 func TestACopyMayReplaceTheCaptionOnMedia(t *testing.T) {
 	k := New(t)
