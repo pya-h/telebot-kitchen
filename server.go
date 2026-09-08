@@ -46,6 +46,7 @@ var apiMethods = map[string]apiMethod{
 	"sendContact":            (*Kitchen).sendContact,
 	"sendDice":               (*Kitchen).sendDice,
 	"sendPoll":               (*Kitchen).sendPoll,
+	"stopPoll":               (*Kitchen).stopPoll,
 	"editMessageMedia":       (*Kitchen).editMessageMedia,
 	"sendInvoice":            (*Kitchen).sendInvoice,
 	"answerPreCheckoutQuery": (*Kitchen).answerPreCheckoutQuery,

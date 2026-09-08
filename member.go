@@ -163,32 +163,20 @@ func (m *Member) RollDice(emoji string, value int) {
 	m.say(models.Message{Dice: &models.Dice{Emoji: emoji, Value: value}})
 }
 
-func (m *Member) SendPoll(question string, options ...string) {
-	if len(options) < 2 {
-		m.kitchen().tb.Errorf("kitchen: a poll asks at least two options, %q got %d", question, len(options))
-		return
+func (m *Member) say(msg models.Message) (models.Message, bool) {
+	sent := m.sayAll(msg)
+	if len(sent) == 0 {
+		return models.Message{}, false
 	}
-	asked := make([]models.PollOption, len(options))
-	for i, option := range options {
-		asked[i] = models.PollOption{Text: option}
-	}
-	m.say(models.Message{Poll: &models.Poll{
-		ID:          m.kitchen().world.nextPoll(),
-		Question:    question,
-		Options:     asked,
-		Type:        "regular",
-		IsAnonymous: true,
-	}})
+	return sent[0], true
 }
-
-func (m *Member) say(msg models.Message) { m.sayAll(msg) }
 
 // The whole batch lands before any of it is delivered, so a reply to the first
 // message cannot be stepped over by the id of the last.
-func (m *Member) sayAll(msgs ...models.Message) {
+func (m *Member) sayAll(msgs ...models.Message) []models.Message {
 	if m.chat.kind == models.ChatTypeChannel {
 		m.kitchen().tb.Errorf("kitchen: %s cannot speak, a channel carries posts rather than what its subscribers say", m)
-		return
+		return nil
 	}
 
 	sender := m.user.identity()
@@ -196,7 +184,7 @@ func (m *Member) sayAll(msgs ...models.Message) {
 	// Speaking somewhere puts you there; Join is what announces it.
 	if !m.kitchen().world.speaking(m.chat.id, sender) {
 		m.kitchen().tb.Errorf("kitchen: the bot restricted %s, so nothing they say arrives", m)
-		return
+		return nil
 	}
 	sent := make([]models.Message, len(msgs))
 	for i, msg := range msgs {
@@ -207,6 +195,7 @@ func (m *Member) sayAll(msgs ...models.Message) {
 	for i := range sent {
 		m.kitchen().deliver(models.Update{Message: &sent[i]})
 	}
+	return sent
 }
 
 // String names the member for a failure; the chat only when it is not their own.

@@ -80,6 +80,8 @@ positive, as Telegram's are, and a negative one is refused.
 | `ShareContact(phone, first, last)` | the contact the "share my number" key sends back |
 | `RollDice(emoji, value)` | a die landing on the face the test names |
 | `SendPoll(question, options...)` | a poll a member asks |
+| `Vote(options...)` | answers the chat's poll by the options' own labels |
+| `RetractVote()` | takes that answer back |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
 with the buttons that were, so a renamed button reads as a clear failure rather
@@ -174,6 +176,32 @@ accepted, each within its own range.
 A poll asks at least two options, a quiz needs an answer that is one of them,
 and a poll nobody said otherwise about is anonymous. `Message.Options` carries
 what a poll asks, in order.
+
+### Answering a poll
+
+`Vote` answers the chat's newest poll by an option's own label, and a vote
+reaches the bot the way Telegram sends it — twice over:
+
+```go
+ada.Vote("Pasta")   // poll_answer, naming ada, then poll, with the new tally
+```
+
+An anonymous poll sends only the second: the bot is told the tally and never who
+made it. `RetractVote` takes an answer back, which arrives as a poll answer
+naming no option. Voting again replaces the earlier answer rather than adding
+to it, so a voter is counted once however often they change their mind.
+
+A bot hears nothing about a poll it did not send, which is Telegram's rule and
+not the kitchen's — a member's own poll still keeps its tally, so the chat reads
+the way a client shows it, but no update goes out.
+
+`stopPoll` closes a poll and answers with its final state. It sends no update:
+the bot already has the result in the reply, and the kitchen never tells a bot
+what it did itself. A bot may stop only the polls it sent, and only once.
+
+A test cannot cast a vote Telegram would refuse — an option the poll does not
+offer, several answers where it takes one, or any answer at all once it is
+closed — so a poll flow fails where the mistake is rather than further along.
 
 ### Albums
 

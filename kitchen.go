@@ -41,6 +41,7 @@ type Kitchen struct {
 	callbacks  *callbackLog
 	calls      *recorder
 	payments   *ledger
+	polls      *pollIndex
 	faults     *faultStore
 	activity   *activity
 
@@ -85,6 +86,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		callbacks:   newCallbackLog(),
 		calls:       newRecorder(),
 		payments:    newLedger(),
+		polls:       newPollIndex(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,

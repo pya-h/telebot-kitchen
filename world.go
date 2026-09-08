@@ -449,6 +449,47 @@ func (w *world) find(chatID int64, messageID int) *models.Message {
 	return nil
 }
 
+// onPoll applies a change to the poll a message carries and answers with the
+// state it leaves behind. A vote is not an edit, so the message's edit date is
+// left alone: stamping one would say the bot changed the message.
+func (w *world) onPoll(chatID int64, messageID int, change func(*models.Poll)) (models.Poll, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	m := w.find(chatID, messageID)
+	if m == nil || m.Poll == nil {
+		return models.Poll{}, false
+	}
+	change(m.Poll)
+	return copyPoll(m.Poll), true
+}
+
+// newestPoll is the poll a member answers when they answer one, since a chat
+// shows the latest and Telegram gives them no way to reach back past it.
+func (w *world) newestPoll(chatID int64) (models.Poll, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return models.Poll{}, false
+	}
+	for i := len(c.messages) - 1; i >= 0; i-- {
+		if c.messages[i].Poll != nil {
+			return copyPoll(c.messages[i].Poll), true
+		}
+	}
+	return models.Poll{}, false
+}
+
+// A poll handed out of the world takes its options with it, so a tally written
+// later cannot be read through what a caller already holds.
+func copyPoll(poll *models.Poll) models.Poll {
+	got := *poll
+	got.Options = slices.Clone(poll.Options)
+	return got
+}
+
 func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Message) error) (edited models.Message, found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
