@@ -82,6 +82,8 @@ positive, as Telegram's are, and a negative one is refused.
 | `SendPoll(question, options...)` | a poll a member asks |
 | `Vote(options...)` | answers the chat's poll by the options' own labels |
 | `RetractVote()` | takes that answer back |
+| `React(emoji...)` | reacts to the newest message; nothing given clears it |
+| `ReactTo(sent, emoji...)` | the same, on a message the test is holding |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
 with the buttons that were, so a renamed button reads as a clear failure rather
@@ -202,6 +204,39 @@ what it did itself. A bot may stop only the polls it sent, and only once.
 A test cannot cast a vote Telegram would refuse — an option the poll does not
 offer, several answers where it takes one, or any answer at all once it is
 closed — so a poll flow fails where the mistake is rather than further along.
+
+### Reactions
+
+`setMessageReaction` puts the bot's own reaction on a message, and `React` puts
+a member's. Either way the message shows what is on it, each reaction once, and
+a transcript shows them underneath the way a client does:
+
+```
+**Ada:** shipped
+👍 🎉
+```
+
+Who hears about a reaction is Telegram's rule rather than the kitchen's, and it
+is the part that catches bots out:
+
+| Where | The bot is told |
+| --- | --- |
+| a private chat | `message_reaction`, naming the one person there |
+| a group or supergroup | `message_reaction`, but **only while the bot is an administrator** |
+| a channel | `message_reaction_count` — the tally, naming nobody |
+
+A group that has demoted the bot goes quiet: the reaction still lands on the
+message, and no update goes out. That is what happens live, so a bot whose
+reaction handling matters should keep a test that demotes it.
+
+A reaction update carries what it replaced as well as what it is now, so
+changing one reads as one change rather than a removal and an addition. The
+bot's own reaction reaches it never — the same as everything else it does
+itself.
+
+Telegram takes only the emoji on its own list, and a test reaching for anything
+else fails where the mistake is. The list is written without the variation
+selector that a keyboard adds, so `❤` and `❤️` are the same reaction here.
 
 ### Albums
 

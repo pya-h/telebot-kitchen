@@ -47,6 +47,7 @@ var apiMethods = map[string]apiMethod{
 	"sendDice":               (*Kitchen).sendDice,
 	"sendPoll":               (*Kitchen).sendPoll,
 	"stopPoll":               (*Kitchen).stopPoll,
+	"setMessageReaction":     (*Kitchen).setMessageReaction,
 	"editMessageMedia":       (*Kitchen).editMessageMedia,
 	"sendInvoice":            (*Kitchen).sendInvoice,
 	"answerPreCheckoutQuery": (*Kitchen).answerPreCheckoutQuery,
@@ -103,9 +104,6 @@ func (p params) markup() (*models.InlineKeyboardMarkup, error) {
 	return markup, nil
 }
 
-// menu reads the other kind of keyboard: the hard keys under the compose box.
-// changed is false when the message says nothing about them, which leaves
-// whatever is up in place.
 func (p params) menu() (rows [][]string, changed bool, err error) {
 	raw, ok := p["reply_markup"]
 	if !ok || raw == "" {
@@ -200,8 +198,6 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 	writeResult(w, result)
 }
 
-// Reported once per method: a bot that polls would otherwise bury the gap under
-// thousands of copies of it.
 func (k *Kitchen) reportUnsupported(method string) {
 	if _, seen := k.unsupported.LoadOrStore(method, struct{}{}); !seen {
 		k.tb.Errorf("kitchen: unsupported Bot API method %q", method)

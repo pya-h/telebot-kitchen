@@ -164,6 +164,19 @@ func (w *world) administrators(chatID int64) []*models.ChatMember {
 	return admins
 }
 
+// botAdministers gates who hears about a reaction: Telegram tells a bot about
+// reactions in a group only while it administers one.
+func (w *world) botAdministers(chatID int64) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return false
+	}
+	return c.bot.status == models.ChatMemberTypeAdministrator || c.bot.status == models.ChatMemberTypeOwner
+}
+
 func (w *world) botPresent(chatID int64) bool {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -449,9 +462,6 @@ func (w *world) find(chatID int64, messageID int) *models.Message {
 	return nil
 }
 
-// onPoll applies a change to the poll a message carries and answers with the
-// state it leaves behind. A vote is not an edit, so the message's edit date is
-// left alone: stamping one would say the bot changed the message.
 func (w *world) onPoll(chatID int64, messageID int, change func(*models.Poll)) (models.Poll, bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -482,8 +492,6 @@ func (w *world) newestPoll(chatID int64) (models.Poll, bool) {
 	return models.Poll{}, false
 }
 
-// A poll handed out of the world takes its options with it, so a tally written
-// later cannot be read through what a caller already holds.
 func copyPoll(poll *models.Poll) models.Poll {
 	got := *poll
 	got.Options = slices.Clone(poll.Options)

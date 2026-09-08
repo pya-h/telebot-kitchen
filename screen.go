@@ -25,7 +25,8 @@ type Message struct {
 	FileID        string
 	Album         string
 	Options       []string // what a poll asks, in the order it asks it
-	Event         string   // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
+	Reactions     []string
+	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
 	Sent          time.Time
 	Keyboard      [][]Button
 }
@@ -129,6 +130,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		FileID:        fileIn(&m),
 		Album:         m.MediaGroupID,
 		Options:       pollOptions(m.Poll),
+		Reactions:     k.reactions.on(m.Chat.ID, m.ID),
 		Event:         event,
 		Sent:          time.Unix(int64(m.Date), 0).UTC(),
 		Keyboard:      buttonsOf(m.ReplyMarkup),

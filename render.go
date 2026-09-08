@@ -27,6 +27,11 @@ func (m Message) String() string {
 		out.WriteString(option)
 	}
 
+	if len(m.Reactions) > 0 {
+		out.WriteString("\n")
+		out.WriteString(strings.Join(m.Reactions, " "))
+	}
+
 	for _, row := range m.Keyboard {
 		out.WriteString("\n")
 		for i, button := range row {
