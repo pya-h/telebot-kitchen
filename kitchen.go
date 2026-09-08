@@ -46,10 +46,12 @@ type Kitchen struct {
 	joins      *joinBook
 	boosts     *boostBook
 	inline     *inlineBook
+	updates    *pollQueue
 	faults     *faultStore
 	activity   *activity
 
-	unsupported sync.Map
+	unsupported   sync.Map
+	polledUnbound sync.Once
 
 	waitTimeout time.Duration
 
@@ -59,6 +61,7 @@ type Kitchen struct {
 	bot     models.User
 	webhook webhook
 	process UpdateProcessor
+	polling bool
 	hook    http.Handler
 	users   map[int64]*User
 }
@@ -95,6 +98,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		joins:       newJoinBook(),
 		boosts:      newBoostBook(),
 		inline:      newInlineBook(),
+		updates:     newPollQueue(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,
@@ -127,7 +131,6 @@ func (k *Kitchen) CallbackAnswer(queryID string) (CallbackAnswer, bool) {
 
 func (k *Kitchen) CallbackAnswers() []CallbackAnswer { return k.callbacks.all() }
 
-// How many of the chat's keyboards a tap may reach; zero means every one.
 func (k *Kitchen) reach() int {
 	if k.scrollback {
 		return 0

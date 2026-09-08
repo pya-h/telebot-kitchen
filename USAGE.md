@@ -209,6 +209,39 @@ A test cannot cast a vote Telegram would refuse — an option the poll does not
 offer, several answers where it takes one, or any answer at all once it is
 closed — so a poll flow fails where the mistake is rather than further along.
 
+### Fetching updates instead of being handed them
+
+`DeliverByPolling` is the third way in, and the only one where the kitchen
+pushes nothing: it queues updates, and the bot fetches them itself through
+`getUpdates`.
+
+```go
+k.DeliverByPolling()
+b, _ := bot.New(k.Token(), bot.WithServerURL(k.APIURL()))
+go b.Start(ctx)          // the bot polls; the kitchen answers
+```
+
+Updates stay queued until an offset confirms them, so a bot that never advances
+one is handed the same updates again — exactly what Telegram does, and the
+bug it lets you reproduce.
+
+A poll waits for something to arrive, but never past the kitchen's own bound:
+a bot asking for thirty seconds is answered with an empty list well before that,
+so a test with nothing coming fails on its assertion rather than on the bot's
+timeout. A shorter timeout than the bound is honoured as asked.
+
+Two conflicts are real and both are modelled. Polling while a webhook is
+registered is refused, and so is a second poll while one is already waiting —
+which is what a stray second bot instance looks like from the inside.
+
+A poll is the bot asking whether anything happened rather than something
+happening, so it does not wake `WaitFor` or `Settle`, and it stays out of
+`Calls()`. A polling bot would otherwise keep the conversation from ever going
+quiet and bury every other call in the log.
+
+Polling a kitchen that was told to push is reported once, rather than leaving a
+test to time out against a queue nothing fills.
+
 ### Inline mode
 
 `Search` is somebody typing the bot's name and a query into the compose box. It
@@ -874,7 +907,4 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 
 ## Not yet here
 
-Long-poll `getUpdates` delivery, deferred until a polling consumer needs it:
-webhook and direct modes cover both ways a bot is normally driven, and a poll is
-reported as an unsupported method rather than silently hanging. This document
-grows with the surface, and describes only what ships today.
+This document grows with the surface, and describes only what ships today.

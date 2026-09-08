@@ -108,6 +108,9 @@ type recorder struct {
 func newRecorder() *recorder { return &recorder{} }
 
 func (r *recorder) record(c Call) {
+	if c.Method == pollMethod {
+		return
+	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.calls = append(r.calls, c)

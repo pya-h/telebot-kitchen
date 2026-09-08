@@ -17,20 +17,19 @@ const (
 	deliveryTimeout = 5 * time.Second
 )
 
-// UpdateProcessor is a bot's "handle one update" entry point.
+// bot's "handle one update" entry point.
 type UpdateProcessor func(context.Context, *models.Update)
 
 func (k *Kitchen) DeliverTo(process UpdateProcessor) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.process, k.hook = process, nil
+	k.process, k.hook, k.polling = process, nil, false
 }
 
-// DeliverToWebhook posts updates to the bot's webhook handler, in process.
 func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.hook, k.process = handler, nil
+	k.hook, k.process, k.polling = handler, nil, false
 }
 
 func (k *Kitchen) deliver(u models.Update) {
@@ -42,7 +41,7 @@ func (k *Kitchen) deliver(u models.Update) {
 
 	// Released before the bot runs: its own API calls take this lock too.
 	k.mu.RLock()
-	process, hook := k.process, k.hook
+	process, hook, polling := k.process, k.hook, k.polling
 	registered := k.webhook
 	k.mu.RUnlock()
 
@@ -51,8 +50,10 @@ func (k *Kitchen) deliver(u models.Update) {
 		k.post(hook, registered, u)
 	case process != nil:
 		process(context.Background(), &u)
+	case polling:
+		k.updates.add(u)
 	default:
-		k.tb.Errorf("kitchen: no bot bound, call DeliverTo or DeliverToWebhook first")
+		k.tb.Errorf("kitchen: no bot bound, call DeliverTo, DeliverToWebhook or DeliverByPolling first")
 	}
 }
 
