@@ -153,6 +153,9 @@ func (c *chat) mayEdit(m *models.Message, botID int64) error {
 	if m.From != nil && m.From.ID == botID {
 		return nil
 	}
+	if m.ViaBot != nil && m.ViaBot.ID == botID {
+		return nil
+	}
 	if c.info.Type == models.ChatTypeChannel && c.bot.may(EditMessages) {
 		return nil
 	}

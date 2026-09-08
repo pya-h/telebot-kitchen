@@ -51,6 +51,7 @@ var apiMethods = map[string]apiMethod{
 	"approveChatJoinRequest": (*Kitchen).approveChatJoinRequest,
 	"declineChatJoinRequest": (*Kitchen).declineChatJoinRequest,
 	"getUserChatBoosts":      (*Kitchen).getUserChatBoosts,
+	"answerInlineQuery":      (*Kitchen).answerInlineQuery,
 	"editMessageMedia":       (*Kitchen).editMessageMedia,
 	"sendInvoice":            (*Kitchen).sendInvoice,
 	"answerPreCheckoutQuery": (*Kitchen).answerPreCheckoutQuery,

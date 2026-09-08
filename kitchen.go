@@ -45,6 +45,7 @@ type Kitchen struct {
 	reactions  *reactionBook
 	joins      *joinBook
 	boosts     *boostBook
+	inline     *inlineBook
 	faults     *faultStore
 	activity   *activity
 
@@ -93,6 +94,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		reactions:   newReactionBook(),
 		joins:       newJoinBook(),
 		boosts:      newBoostBook(),
+		inline:      newInlineBook(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,

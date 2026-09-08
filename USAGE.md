@@ -86,6 +86,8 @@ positive, as Telegram's are, and a negative one is refused.
 | `ReactTo(sent, emoji...)` | the same, on a message the test is holding |
 | `AskToJoin(bio...)` | knocks on a chat that admits people by approval |
 | `Boost()` / `Unboost()` | puts a premium boost behind a chat, or takes it back |
+| `Search(query)` | types the bot's name and a query, which is an inline query |
+| `Pick(titleOrID)` | chooses one of the results the bot offered back |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
 with the buttons that were, so a renamed button reads as a clear failure rather
@@ -206,6 +208,40 @@ what it did itself. A bot may stop only the polls it sent, and only once.
 A test cannot cast a vote Telegram would refuse — an option the poll does not
 offer, several answers where it takes one, or any answer at all once it is
 closed — so a poll flow fails where the mistake is rather than further along.
+
+### Inline mode
+
+`Search` is somebody typing the bot's name and a query into the compose box. It
+reaches the bot as an inline query and puts nothing in the chat, so a bot that
+answers the wrong way is caught rather than quietly writing a message.
+
+```go
+ada.Search("piz")     // inline_query, with the kind of chat she is typing in
+k.Settle()
+ada.Pick("Pizza")     // by the result's title, or by its id
+```
+
+`answerInlineQuery` refuses what Telegram refuses: a query nobody is waiting on
+or one already answered, a result with no id, two results sharing one, more
+than fifty of them, and an article with nothing to send. A result is turned into
+the message it would become **while the bot is still there to hear about it**,
+so a malformed one fails at the answer rather than at the pick.
+
+Picking lands that message in the chat and tells the bot through
+`chosen_inline_result`. It arrives once: the content came from the bot, so a
+message update would be telling it what it did itself.
+
+The message is sent by the member, with the bot recorded as the one it went
+through — and that is enough to make it the bot's to edit, which is how an
+inline result gets updated after it lands. Editing by `inline_message_id` is not
+modelled; edit it by its message id like any other.
+
+What a result becomes follows Telegram: `input_message_content` when there is
+one — text, a location, a venue or a contact — otherwise the media the result
+names, otherwise the result's own location, venue or contact, and failing all
+that its title. A cached result carries the file the bot already had, so
+`k.File` reads the same bytes back; one given by URL has no bytes to carry, and
+the kitchen keeps it by its address instead.
 
 ### Asking to join, and boosts
 
