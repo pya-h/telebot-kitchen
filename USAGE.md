@@ -76,6 +76,10 @@ positive, as Telegram's are, and a negative one is refused.
 | `SendVoice` / `SendAudio` / `SendVideo` / `SendAnimation` / `SendDocument` | the same shape, one per kind |
 | `SendSticker(name, data)` / `SendVideoNote(name, data)` | the two kinds Telegram allows no caption on |
 | `ShareLocation(lat, lng)` | a location message |
+| `ShareVenue(lat, lng, title, address)` | a place, which carries its coordinates too |
+| `ShareContact(phone, first, last)` | the contact the "share my number" key sends back |
+| `RollDice(emoji, value)` | a die landing on the face the test names |
+| `SendPoll(question, options...)` | a poll a member asks |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
 with the buttons that were, so a renamed button reads as a clear failure rather
@@ -142,6 +146,34 @@ five of the eight in, so a sticker, a voice note and a video note are refused,
 as is a message that had no media to begin with. Editing to the file already
 there is `message is not modified`, the same as any other edit that changes
 nothing.
+
+### Places, contacts, dice and polls
+
+`sendVenue`, `sendContact`, `sendDice` and `sendPoll` land beside the media
+kinds, and a transcript shows each as a client does — a venue by its title, a
+contact by name, a die by what it landed on, a poll by its question and what it
+asks:
+
+```
+**Bot:** (poll) Pizza or pasta?
+- Pizza
+- Pasta
+**Ada:** (dice) 🎲 6
+```
+
+A venue carries its coordinates as well as its address, the way Telegram sends
+both, so a bot reading `Location` off one still finds it.
+
+A roll the bot asks for is Telegram's to make, so the kitchen makes it
+repeatable: the faces come up in turn, first 1, then 2, and a test that runs
+twice rolls the same twice. A roll a *member* makes is the test's to choose,
+which is why `RollDice` takes the face — asserting what the bot does about a six
+is the point, and waiting for one is not. Only the six emoji Telegram rolls are
+accepted, each within its own range.
+
+A poll asks at least two options, a quiz needs an answer that is one of them,
+and a poll nobody said otherwise about is anonymous. `Message.Options` carries
+what a poll asks, in order.
 
 ### Albums
 

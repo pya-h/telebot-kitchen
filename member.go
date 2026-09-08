@@ -132,6 +132,55 @@ func (m *Member) ShareLocation(latitude, longitude float64) {
 	m.say(models.Message{Location: &models.Location{Latitude: latitude, Longitude: longitude}})
 }
 
+func (m *Member) ShareVenue(latitude, longitude float64, title, address string) {
+	where := models.Location{Latitude: latitude, Longitude: longitude}
+	m.say(models.Message{
+		Location: &where,
+		Venue:    &models.Venue{Location: where, Title: title, Address: address},
+	})
+}
+
+// A member sharing a contact is sharing their own, which is what the button
+// asking for one sends back, so the contact names them.
+func (m *Member) ShareContact(phone, firstName, lastName string) {
+	m.say(models.Message{Contact: &models.Contact{
+		PhoneNumber: phone, FirstName: firstName, LastName: lastName, UserID: m.user.id,
+	}})
+}
+
+// RollDice takes the face it landed on rather than picking one, since what the
+// bot does about it is the thing under test.
+func (m *Member) RollDice(emoji string, value int) {
+	faces, rollable := diceFaces[emoji]
+	if !rollable {
+		m.kitchen().tb.Errorf("kitchen: Telegram rolls no %q, only %s", emoji, rollableEmoji())
+		return
+	}
+	if value < 1 || value > faces {
+		m.kitchen().tb.Errorf("kitchen: %s lands on 1 to %d, not %d", emoji, faces, value)
+		return
+	}
+	m.say(models.Message{Dice: &models.Dice{Emoji: emoji, Value: value}})
+}
+
+func (m *Member) SendPoll(question string, options ...string) {
+	if len(options) < 2 {
+		m.kitchen().tb.Errorf("kitchen: a poll asks at least two options, %q got %d", question, len(options))
+		return
+	}
+	asked := make([]models.PollOption, len(options))
+	for i, option := range options {
+		asked[i] = models.PollOption{Text: option}
+	}
+	m.say(models.Message{Poll: &models.Poll{
+		ID:          m.kitchen().world.nextPoll(),
+		Question:    question,
+		Options:     asked,
+		Type:        "regular",
+		IsAnonymous: true,
+	}})
+}
+
 func (m *Member) say(msg models.Message) { m.sayAll(msg) }
 
 // The whole batch lands before any of it is delivered, so a reply to the first

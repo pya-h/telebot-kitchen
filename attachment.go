@@ -59,7 +59,8 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 }
 
 // mediaOf is what a client shows the message as, and whether Telegram lets it
-// carry a caption: a sticker, a video note and a location take none.
+// carry a caption: only the file kinds take one, and a venue is shown as itself
+// rather than as the coordinates it also carries.
 func mediaOf(m *models.Message) (label string, captioned bool) {
 	switch {
 	case len(m.Photo) > 0:
@@ -78,8 +79,16 @@ func mediaOf(m *models.Message) (label string, captioned bool) {
 		return "sticker", false
 	case m.VideoNote != nil:
 		return "video note", false
+	case m.Venue != nil:
+		return "venue", false
 	case m.Location != nil:
 		return "location", false
+	case m.Contact != nil:
+		return "contact", false
+	case m.Dice != nil:
+		return "dice", false
+	case m.Poll != nil:
+		return "poll", false
 	}
 	return "", false
 }

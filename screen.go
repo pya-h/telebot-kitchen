@@ -1,6 +1,7 @@
 package kitchen
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,7 +24,8 @@ type Message struct {
 	Media         string
 	FileID        string
 	Album         string
-	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
+	Options       []string // what a poll asks, in the order it asks it
+	Event         string   // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
 	Sent          time.Time
 	Keyboard      [][]Button
 }
@@ -100,9 +102,20 @@ func (k *Kitchen) view(m models.Message) Message {
 	case m.RefundedPayment != nil:
 		event = "refunded"
 	}
-	// A client shows an invoice by its title, and the message carries no text.
-	if m.Invoice != nil && text == "" {
-		text = m.Invoice.Title
+	// These carry no text of their own; a client shows each by what it is.
+	if text == "" {
+		switch {
+		case m.Invoice != nil:
+			text = m.Invoice.Title
+		case m.Venue != nil:
+			text = m.Venue.Title
+		case m.Contact != nil:
+			text = contactName(m.Contact)
+		case m.Dice != nil:
+			text = m.Dice.Emoji + " " + strconv.Itoa(m.Dice.Value)
+		case m.Poll != nil:
+			text = m.Poll.Question
+		}
 	}
 
 	return Message{
@@ -115,6 +128,7 @@ func (k *Kitchen) view(m models.Message) Message {
 		Media:         media,
 		FileID:        fileIn(&m),
 		Album:         m.MediaGroupID,
+		Options:       pollOptions(m.Poll),
 		Event:         event,
 		Sent:          time.Unix(int64(m.Date), 0).UTC(),
 		Keyboard:      buttonsOf(m.ReplyMarkup),

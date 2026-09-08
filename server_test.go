@@ -40,7 +40,7 @@ func TestServeReportsUnsupportedMethod(t *testing.T) {
 	defer tb.close()
 
 	wake := k.activity.watch()
-	reply := callJSON(t, k, "sendDice", `{"chat_id":1}`)
+	reply := callJSON(t, k, "sendGame", `{"chat_id":1}`)
 	if reply.OK || reply.ErrorCode != http.StatusNotFound {
 		t.Errorf("reply = %+v, want a not-found error", reply)
 	}
@@ -56,14 +56,14 @@ func TestServeReportsUnsupportedMethod(t *testing.T) {
 	// However often a bot asks for it, the gap is reported once, so a bot that
 	// polls cannot bury it under thousands of copies.
 	for range 3 {
-		callJSON(t, k, "sendDice", `{"chat_id":1}`)
+		callJSON(t, k, "sendGame", `{"chat_id":1}`)
 	}
 	errs := tb.errors()
-	if len(errs) != 1 || !strings.Contains(errs[0], "sendDice") {
+	if len(errs) != 1 || !strings.Contains(errs[0], "sendGame") {
 		t.Errorf("reported errors = %v, want one naming the missing method", errs)
 	}
 
-	callJSON(t, k, "sendPoll", `{"chat_id":1}`)
+	callJSON(t, k, "setGameScore", `{"chat_id":1}`)
 	if errs := tb.errors(); len(errs) != 2 {
 		t.Errorf("reported errors = %v, want a second method reported on its own", errs)
 	}

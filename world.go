@@ -35,6 +35,8 @@ type world struct {
 	nextUpdateID atomic.Int64
 	nextQueryID  atomic.Int64
 	nextAlbumID  atomic.Int64
+	nextPollID   atomic.Int64
+	nextRollID   atomic.Int64
 }
 
 func newWorld(clock *Clock, bot models.User) *world {
@@ -46,6 +48,12 @@ func (w *world) nextUpdate() int64 { return w.nextUpdateID.Add(1) }
 func (w *world) nextQuery() string { return "query-" + strconv.FormatInt(w.nextQueryID.Add(1), 10) }
 
 func (w *world) nextAlbum() string { return "album-" + strconv.FormatInt(w.nextAlbumID.Add(1), 10) }
+
+func (w *world) nextPoll() string { return "poll-" + strconv.FormatInt(w.nextPollID.Add(1), 10) }
+
+// A roll has to be repeatable to be worth asserting, so the faces come up in
+// turn rather than at random.
+func (w *world) nextRoll(faces int) int { return int(w.nextRollID.Add(1)-1)%faces + 1 }
 
 // chatAt is for an id nobody described, which only a private chat can be.
 func (w *world) chatAt(id int64) *chat {

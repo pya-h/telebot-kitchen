@@ -22,6 +22,11 @@ func (m Message) String() string {
 	var out strings.Builder
 	out.WriteString(strings.Join(parts, " "))
 
+	for _, option := range m.Options {
+		out.WriteString("\n- ")
+		out.WriteString(option)
+	}
+
 	for _, row := range m.Keyboard {
 		out.WriteString("\n")
 		for i, button := range row {
