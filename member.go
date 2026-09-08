@@ -235,6 +235,32 @@ func (m *Member) Join() {
 	m.announce(who, standing{status: models.ChatMemberTypeMember}, &models.Message{NewChatMembers: []models.User{who}})
 }
 
+// AskToJoin knocks on a chat that admits people by approval, which reaches the
+// bot as a join request rather than putting anybody on the roster.
+func (m *Member) AskToJoin(bio ...string) {
+	k := m.kitchen()
+	if !m.roster() {
+		return
+	}
+	if standing, known := k.world.standingOf(m.chat.id, m.user.id); known && admitted(standing) {
+		k.tb.Errorf("kitchen: %s is already in the chat, so there is nothing to ask for", m)
+		return
+	}
+
+	who := m.user.identity()
+	if !k.joins.ask(m.chat.id, who) {
+		k.tb.Errorf("kitchen: %s has already asked to join, and Telegram takes one request at a time", m)
+		return
+	}
+
+	info, _ := k.world.info(m.chat.id)
+	m.awaitFromNow()
+	k.deliver(models.Update{ChatJoinRequest: &models.ChatJoinRequest{
+		Chat: info, From: who, UserChatID: m.user.id,
+		Date: int(k.clock.Now().Unix()), Bio: strings.Join(bio, " "),
+	}})
+}
+
 func (m *Member) Leave() {
 	who := m.user.identity()
 	m.announce(who, standing{status: models.ChatMemberTypeLeft}, &models.Message{LeftChatMember: &who})

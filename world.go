@@ -234,6 +234,19 @@ func (w *world) speaking(chatID int64, u models.User) bool {
 }
 
 // manage changes a member's standing on the bot's say-so, if it may.
+// mayManage is the rights check on its own, for the verbs that change nobody's
+// standing directly.
+func (w *world) mayManage(chatID int64, need Right, what string) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	return c.mayManage(need, what)
+}
+
 func (w *world) manage(chatID, userID int64, need Right, what string, apply func(*standing)) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()

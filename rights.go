@@ -59,6 +59,18 @@ func (s standing) present() bool {
 	return true
 }
 
+// admitted reads presence off what getChatMember answers, for callers holding
+// that rather than the standing behind it.
+func admitted(member models.ChatMember) bool {
+	switch member.Type {
+	case models.ChatMemberTypeLeft, models.ChatMemberTypeBanned:
+		return false
+	case models.ChatMemberTypeRestricted:
+		return member.Restricted.IsMember
+	}
+	return true
+}
+
 // rightsIn reads a promotion, whose parameters are named after the rights.
 func rightsIn(p params) []Right {
 	var granted []Right

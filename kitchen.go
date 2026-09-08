@@ -43,6 +43,8 @@ type Kitchen struct {
 	payments   *ledger
 	polls      *pollIndex
 	reactions  *reactionBook
+	joins      *joinBook
+	boosts     *boostBook
 	faults     *faultStore
 	activity   *activity
 
@@ -89,6 +91,8 @@ func New(tb TB, opts ...Option) *Kitchen {
 		payments:    newLedger(),
 		polls:       newPollIndex(),
 		reactions:   newReactionBook(),
+		joins:       newJoinBook(),
+		boosts:      newBoostBook(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
 		waitTimeout: defaultWaitTimeout,

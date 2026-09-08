@@ -84,6 +84,8 @@ positive, as Telegram's are, and a negative one is refused.
 | `RetractVote()` | takes that answer back |
 | `React(emoji...)` | reacts to the newest message; nothing given clears it |
 | `ReactTo(sent, emoji...)` | the same, on a message the test is holding |
+| `AskToJoin(bio...)` | knocks on a chat that admits people by approval |
+| `Boost()` / `Unboost()` | puts a premium boost behind a chat, or takes it back |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
 with the buttons that were, so a renamed button reads as a clear failure rather
@@ -204,6 +206,28 @@ what it did itself. A bot may stop only the polls it sent, and only once.
 A test cannot cast a vote Telegram would refuse — an option the poll does not
 offer, several answers where it takes one, or any answer at all once it is
 closed — so a poll flow fails where the mistake is rather than further along.
+
+### Asking to join, and boosts
+
+A chat that admits people by approval hears `AskToJoin` as a join request rather
+than a join: nobody reaches the roster, and `getChatMember` still reads `left`
+until the bot answers.
+
+```go
+ada.AskToJoin("found you through a friend")
+// the bot approves, and only then is ada a member
+```
+
+`approveChatJoinRequest` lets them in and `declineChatJoinRequest` does not, and
+either way the request is answered and cannot be answered twice. Both need the
+right to invite users. The `chat_member` update an approval makes names the
+**bot** as what changed them, not the member — an approval is the bot's doing,
+where a plain `Join` is theirs.
+
+`Boost` and `Unboost` put a premium boost behind a chat and take it back, which
+reach the bot as `chat_boost` and `removed_chat_boost`. Boosting is not joining:
+somebody may boost a channel they never joined. `getUserChatBoosts` answers with
+what one person is holding.
 
 ### Reactions
 

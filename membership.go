@@ -2,9 +2,47 @@ package kitchen
 
 import (
 	"slices"
+	"sync"
 
 	"github.com/go-telegram/bot/models"
 )
+
+// joinBook holds the requests waiting on an answer. A request is not a
+// standing: somebody asking to join is not in the chat until they are let in.
+type joinBook struct {
+	mu     sync.Mutex
+	asking map[int64]map[int64]models.User
+}
+
+func newJoinBook() *joinBook { return &joinBook{asking: map[int64]map[int64]models.User{}} }
+
+func (b *joinBook) ask(chatID int64, who models.User) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	waiting, ok := b.asking[chatID]
+	if !ok {
+		waiting = map[int64]models.User{}
+		b.asking[chatID] = waiting
+	}
+	if _, already := waiting[who.ID]; already {
+		return false
+	}
+	waiting[who.ID] = who
+	return true
+}
+
+// answer takes the request off the list, and says whether there was one.
+func (b *joinBook) answer(chatID, userID int64) (models.User, bool) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	who, waiting := b.asking[chatID][userID]
+	if waiting {
+		delete(b.asking[chatID], userID)
+	}
+	return who, waiting
+}
 
 // The calls a bot makes before it acts, answered from the roster.
 func (k *Kitchen) getChat(p params) (any, error) {
@@ -134,6 +172,46 @@ func (k *Kitchen) manage(p params, need Right, what string, apply func(*standing
 	if err := k.world.manage(chatID, userID, need, what, apply); err != nil {
 		return nil, err
 	}
+	return true, nil
+}
+
+// Letting somebody in is the bot's own doing, so the chat_member update it
+// makes names the bot as what changed them, not the member.
+func (k *Kitchen) approveChatJoinRequest(p params) (any, error) {
+	return k.answerJoinRequest(p, true)
+}
+
+func (k *Kitchen) declineChatJoinRequest(p params) (any, error) {
+	return k.answerJoinRequest(p, false)
+}
+
+func (k *Kitchen) answerJoinRequest(p params, admit bool) (any, error) {
+	chatID, err := p.chatID()
+	if err != nil {
+		return nil, err
+	}
+	userID, err := p.chat("user_id")
+	if err != nil {
+		return nil, err
+	}
+	if err := k.world.mayManage(chatID, InviteUsers, "manage chat join requests"); err != nil {
+		return nil, err
+	}
+
+	who, waiting := k.joins.answer(chatID, userID)
+	if !waiting {
+		return nil, requestError("HIDE_REQUESTER_MISSING")
+	}
+	if !admit {
+		return true, nil
+	}
+
+	sender := k.botUser()
+	was, now, chat := k.world.restand(chatID, who, standing{status: models.ChatMemberTypeMember})
+	k.deliver(models.Update{ChatMember: &models.ChatMemberUpdated{
+		Chat: chat, From: sender, Date: int(k.clock.Now().Unix()),
+		OldChatMember: was, NewChatMember: now,
+	}})
 	return true, nil
 }
 
