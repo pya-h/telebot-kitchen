@@ -1,6 +1,10 @@
 package kitchen
 
-import "github.com/go-telegram/bot/models"
+import (
+	"slices"
+
+	"github.com/go-telegram/bot/models"
+)
 
 // The calls a bot makes before it acts, answered from the roster.
 func (k *Kitchen) getChat(p params) (any, error) {
@@ -98,16 +102,21 @@ func (k *Kitchen) restrictChatMember(p params) (any, error) {
 		return nil, badRequest("permissions")
 	}
 	return k.manage(p, RestrictMembers, "restrict a chat member", func(s *standing) {
+		// Restricting somebody who is not in the chat waits for them rather than
+		// putting them back, so read presence before the status is overwritten.
+		s.absent = !s.present()
 		s.status, s.silenced = models.ChatMemberTypeRestricted, !allowed.CanSendMessages
 	})
 }
 
-// Promoting with nothing granted is how Telegram spells a demotion.
+// Promoting with nothing granted is how Telegram spells a demotion, so the
+// rights the kitchen only reports still have to count towards the status.
 func (k *Kitchen) promoteChatMember(p params) (any, error) {
 	granted := rightsIn(p)
+	demoted := len(granted) == 0 && !slices.ContainsFunc(reportedRights, p.flag)
 	return k.manage(p, PromoteMembers, "promote a chat member", func(s *standing) {
 		s.rights, s.silenced = granted, false
-		if s.status = models.ChatMemberTypeAdministrator; len(granted) == 0 {
+		if s.status = models.ChatMemberTypeAdministrator; demoted {
 			s.status = models.ChatMemberTypeMember
 		}
 	})

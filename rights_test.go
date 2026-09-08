@@ -167,6 +167,44 @@ func TestManagingMembersNeedsTheRight(t *testing.T) {
 	}
 }
 
+// A promotion may name only rights the kitchen reports and never refuses a call
+// for; granting nothing is a demotion, but granting those is not.
+func TestGrantingOnlyTheRightsTheKitchenReportsIsStillAPromotion(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-42, "Standup")
+	k.User(7).In(team).Join()
+
+	callForm(t, k, "promoteChatMember", map[string]string{
+		"chat_id": "-42", "user_id": "7", "can_manage_chat": "true",
+	})
+	if member := chatMemberOf(t, k, -42, 7); member.Type != models.ChatMemberTypeAdministrator {
+		t.Errorf("member = %+v, want them promoted", member)
+	}
+}
+
+// Telegram restricts somebody who is not in the chat without putting them back.
+func TestRestrictingSomebodyWhoLeftDoesNotPutThemBack(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-42, "Standup")
+	ali := k.User(7).In(team)
+	ali.Join()
+	ali.Leave()
+
+	callForm(t, k, "restrictChatMember", map[string]string{
+		"chat_id": "-42", "user_id": "7", "permissions": `{"can_send_messages":false}`,
+	})
+
+	member := chatMemberOf(t, k, -42, 7)
+	if member.Type != models.ChatMemberTypeRestricted || member.Restricted.IsMember {
+		t.Errorf("member = %+v, want them restricted and still out of the chat", member)
+	}
+	if roster := team.Members(); len(roster) != 0 {
+		t.Errorf("roster = %v, want the restriction to have left it empty", roster)
+	}
+}
+
 func TestBanningTakesAMemberOffTheRoster(t *testing.T) {
 	k := New(t)
 	k.DeliverTo(func(context.Context, *models.Update) {})

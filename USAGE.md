@@ -254,7 +254,10 @@ through a silence the bot asked for.
 `PostMessages`, `EditMessages`, `DeleteMessages`, `PinMessages`,
 `RestrictMembers` and `PromoteMembers` are enforced. `InviteUsers` and
 `ChangeInfo` are reported through `getChatMember` and nothing more, since no
-call here can be refused for them.
+call here can be refused for them. A promotion naming only rights outside that
+list — `can_manage_chat` and the rest of the Bot API's set — still makes an
+administrator; a promotion granting nothing at all is how Telegram spells a
+demotion.
 
 Nothing the bot does comes back to it: its own message, edit, pin or ban makes
 no update, exactly as its own `sendMessage` never did.

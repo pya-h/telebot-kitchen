@@ -27,11 +27,19 @@ var everyRight = []Right{
 	RestrictMembers, PromoteMembers, InviteUsers, ChangeInfo,
 }
 
+// The rest of what a promotion may grant. Nothing is refused for them, but a
+// promotion naming only these is still a promotion.
+var reportedRights = []string{
+	"is_anonymous", "can_manage_chat", "can_manage_video_chats", "can_manage_topics",
+	"can_post_stories", "can_edit_stories", "can_delete_stories",
+}
+
 type standing struct {
 	user     models.User
 	status   models.ChatMemberType
 	rights   []Right
 	silenced bool
+	absent   bool // restricted from outside the chat, which Telegram keeps apart
 }
 
 func (s standing) may(r Right) bool {
@@ -42,7 +50,13 @@ func (s standing) may(r Right) bool {
 }
 
 func (s standing) present() bool {
-	return s.status != models.ChatMemberTypeLeft && s.status != models.ChatMemberTypeBanned
+	switch s.status {
+	case models.ChatMemberTypeLeft, models.ChatMemberTypeBanned:
+		return false
+	case models.ChatMemberTypeRestricted:
+		return !s.absent
+	}
+	return true
 }
 
 // rightsIn reads a promotion, whose parameters are named after the rights.
@@ -78,7 +92,7 @@ func (s standing) chatMember() models.ChatMember {
 
 	case models.ChatMemberTypeRestricted:
 		return models.ChatMember{Type: s.status, Restricted: &models.ChatMemberRestricted{
-			User: &s.user, IsMember: true, CanSendMessages: !s.silenced,
+			User: &s.user, IsMember: !s.absent, CanSendMessages: !s.silenced,
 		}}
 
 	case models.ChatMemberTypeLeft:
