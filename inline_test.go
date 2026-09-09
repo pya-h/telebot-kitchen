@@ -273,3 +273,33 @@ func TestTooManyResults(t *testing.T) {
 		t.Error("more results than Telegram takes were accepted, want them refused")
 	}
 }
+
+// Query ids are text, and text puts "query-9" after "query-10", so the newest
+// search has to be tracked by when it was asked rather than by its id.
+func TestPickTakesTheNewestSearchPastTheNinth(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(ctx context.Context, u *models.Update) {
+		if u.InlineQuery == nil {
+			return
+		}
+		b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+			InlineQueryID: u.InlineQuery.ID,
+			Results: []models.InlineQueryResult{
+				article("r"+u.InlineQuery.Query, "for "+u.InlineQuery.Query, "about "+u.InlineQuery.Query),
+			},
+		})
+	})
+	ada := k.User(7)
+
+	for i := 1; i <= 11; i++ {
+		ada.Search(strconv.Itoa(i))
+		k.Settle()
+	}
+	ada.Pick("for 11")
+
+	sent := ada.History()
+	if last := sent[len(sent)-1]; last.Text != "about 11" {
+		t.Errorf("picked %q, want the eleventh search's result", last.Text)
+	}
+}

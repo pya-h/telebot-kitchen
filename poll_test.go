@@ -369,3 +369,33 @@ func TestStoppingWhatIsNotAPoll(t *testing.T) {
 		t.Error("a plain message was stopped, want it refused")
 	}
 }
+
+// A stored poll changes in place as the votes come in, so one that went out in
+// an update has to be the bot's own copy rather than the world's.
+func TestAPollTheBotWasHandedDoesNotChangeUnderIt(t *testing.T) {
+	k := New(t)
+	var seen *models.Poll
+	k.DeliverTo(func(ctx context.Context, u *models.Update) {
+		if u.Message != nil && u.Message.Poll != nil && seen == nil {
+			seen = u.Message.Poll
+		}
+	})
+	team := k.Group(-42, "Standup")
+	ada, bob := k.User(7).In(team), k.User(8).In(team)
+	ada.Join()
+	bob.Join()
+	k.Settle()
+
+	ada.SendPoll("lunch?", "pizza", "soup")
+	k.Settle()
+	if seen == nil {
+		t.Fatal("the bot was never handed the poll")
+	}
+
+	bob.Vote("pizza")
+	k.Settle()
+
+	if seen.Options[0].VoterCount != 0 || seen.TotalVoterCount != 0 {
+		t.Errorf("the poll the bot was handed grew a vote it was never told about: %+v", seen.Options)
+	}
+}

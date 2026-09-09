@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"net/http"
 	"strconv"
 	"strings"
 	"testing"
@@ -264,3 +265,32 @@ func poll(t *testing.T, k *Kitchen, form map[string]string) []models.Update {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// A poll asks for as long as it is allowed, so a kitchen that waited it out
+// would hold the server open long past the test that owns it.
+func TestClosingTheKitchenGivesUpOnAPollInFlight(t *testing.T) {
+	tb := &recordingTB{}
+	k := New(tb, WithWaitTimeout(30*time.Second))
+	k.DeliverByPolling()
+
+	go func() {
+		res, err := http.Get(k.APIURL() + "/bot" + k.Token() + "/getUpdates")
+		if err == nil {
+			res.Body.Close()
+		}
+	}()
+	if !within(time.Second, k.updates.busy) {
+		t.Fatal("the poll never reached the kitchen")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		tb.close()
+	}()
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Error("closing the kitchen waited on the poll instead of cutting it short")
+	}
+}

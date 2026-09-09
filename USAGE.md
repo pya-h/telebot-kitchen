@@ -448,7 +448,9 @@ administrator; a promotion granting nothing at all is how Telegram spells a
 demotion.
 
 Nothing the bot does comes back to it: its own message, edit, pin or ban makes
-no update, exactly as its own `sendMessage` never did.
+no update, exactly as its own `sendMessage` never did. Approving a join request
+is the one exception, described with the rest of them below: what changes there
+is somebody else's membership, not anything the bot put on screen.
 
 ### When a group becomes a supergroup
 

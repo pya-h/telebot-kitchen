@@ -285,7 +285,7 @@ func (w *world) pin(chatID int64, messageID int) (models.Message, error) {
 	if !slices.Contains(c.pinned, messageID) {
 		c.pinned = append(c.pinned, messageID)
 	}
-	return *m, nil
+	return handed(m), nil
 }
 
 // unpin takes back the newest pin, or the one named. Telegram writes nothing in
@@ -326,7 +326,7 @@ func (w *world) newestPin(chatID int64) (models.Message, bool) {
 	if m == nil {
 		return models.Message{}, false
 	}
-	return *m, true
+	return handed(m), true
 }
 
 // migrate moves a group's people to a supergroup and leaves a forwarding
@@ -448,7 +448,7 @@ func (w *world) add(chatID int64, m models.Message) models.Message {
 	c.nextMessageID++
 
 	c.messages = append(c.messages, &m)
-	return m
+	return handed(&m)
 }
 
 func (w *world) message(chatID int64, messageID int) (models.Message, bool) {
@@ -459,7 +459,7 @@ func (w *world) message(chatID int64, messageID int) (models.Message, bool) {
 	if m == nil {
 		return models.Message{}, false
 	}
-	return *m, true
+	return handed(m), true
 }
 
 func (w *world) find(chatID int64, messageID int) *models.Message {
@@ -511,6 +511,18 @@ func copyPoll(poll *models.Poll) models.Poll {
 	return got
 }
 
+// handed is a message on its way out of the world. A poll is the one thing a
+// stored message keeps changing in place, so a copy leaves carrying its own:
+// otherwise the next vote rewrites the tally under whoever was handed it.
+func handed(m *models.Message) models.Message {
+	out := *m
+	if m.Poll != nil {
+		poll := copyPoll(m.Poll)
+		out.Poll = &poll
+	}
+	return out
+}
+
 func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Message) error) (edited models.Message, found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -520,10 +532,10 @@ func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Mes
 		return models.Message{}, false, nil
 	}
 	if err := mutate(w.chats[chatID], m); err != nil {
-		return *m, true, err
+		return handed(m), true, err
 	}
 	m.EditDate = int(w.clock.Now().Unix())
-	return *m, true, nil
+	return handed(m), true, nil
 }
 
 func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, err error) {
@@ -561,7 +573,7 @@ func (w *world) keyboards(chatID int64, limit int) []models.Message {
 		if c.messages[i].ReplyMarkup == nil {
 			continue
 		}
-		screens = append(screens, *c.messages[i])
+		screens = append(screens, handed(c.messages[i]))
 		if len(screens) == limit {
 			break
 		}
@@ -589,7 +601,7 @@ func (w *world) latest(chatID int64) (models.Message, bool) {
 	if !ok || len(c.messages) == 0 {
 		return models.Message{}, false
 	}
-	return *c.messages[len(c.messages)-1], true
+	return handed(c.messages[len(c.messages)-1]), true
 }
 
 func (w *world) history(chatID int64) []models.Message {
@@ -602,7 +614,7 @@ func (w *world) history(chatID int64) []models.Message {
 	}
 	log := make([]models.Message, len(c.messages))
 	for i, m := range c.messages {
-		log[i] = *m
+		log[i] = handed(m)
 	}
 	return log
 }

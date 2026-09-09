@@ -53,7 +53,6 @@ func (q *pollQueue) end() {
 	q.polling = false
 }
 
-// confirm drops what the offset says the bot already has.
 // busy says whether a poll is holding the queue, which a test watches for
 // rather than guessing at with a sleep.
 func (q *pollQueue) busy() bool {
@@ -62,6 +61,7 @@ func (q *pollQueue) busy() bool {
 	return q.polling
 }
 
+// confirm drops what the offset says the bot already has.
 func (q *pollQueue) confirm(offset int64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -151,6 +151,8 @@ func (k *Kitchen) getUpdates(p params) (any, error) {
 		select {
 		case <-wake:
 		case <-timeout.C:
+			return []models.Update{}, nil
+		case <-k.closing:
 			return []models.Update{}, nil
 		}
 	}

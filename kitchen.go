@@ -53,6 +53,10 @@ type Kitchen struct {
 	unsupported   sync.Map
 	polledUnbound sync.Once
 
+	// Closed when the test is over, so a poll waiting on nothing gives up rather
+	// than holding the server open until it has waited its whole timeout out.
+	closing chan struct{}
+
 	waitTimeout time.Duration
 
 	deliverMu sync.Mutex
@@ -101,6 +105,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		updates:     newPollQueue(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
+		closing:     make(chan struct{}),
 		waitTimeout: defaultWaitTimeout,
 		users:       map[int64]*User{},
 		bot:         models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
@@ -112,8 +117,13 @@ func New(tb TB, opts ...Option) *Kitchen {
 	k.world = newWorld(k.clock, k.bot)
 
 	k.server = httptest.NewServer(http.HandlerFunc(k.serve))
-	tb.Cleanup(k.server.Close)
+	tb.Cleanup(k.close)
 	return k
+}
+
+func (k *Kitchen) close() {
+	close(k.closing)
+	k.server.Close()
 }
 
 func (k *Kitchen) APIURL() string { return k.server.URL }

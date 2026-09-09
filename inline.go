@@ -65,9 +65,11 @@ type offer struct {
 type inlineBook struct {
 	mu    sync.Mutex
 	asked map[string]*inlineQuestion
+	count int
 }
 
 type inlineQuestion struct {
+	at       int // when it was asked, since the ids sort as text and "9" outranks "10"
 	chatID   int64
 	userID   int64
 	query    string
@@ -80,7 +82,9 @@ func newInlineBook() *inlineBook { return &inlineBook{asked: map[string]*inlineQ
 func (b *inlineBook) ask(id string, chatID, userID int64, query string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.asked[id] = &inlineQuestion{chatID: chatID, userID: userID, query: query}
+
+	b.count++
+	b.asked[id] = &inlineQuestion{at: b.count, chatID: chatID, userID: userID, query: query}
 }
 
 // answer fills in a question once; a second answer is as late as no question.
@@ -101,16 +105,19 @@ func (b *inlineBook) newest(chatID, userID int64) (inlineQuestion, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	var found string
-	for id, asked := range b.asked {
-		if asked.chatID == chatID && asked.userID == userID && asked.answered && id > found {
-			found = id
+	var found *inlineQuestion
+	for _, asked := range b.asked {
+		if asked.chatID != chatID || asked.userID != userID || !asked.answered {
+			continue
+		}
+		if found == nil || asked.at > found.at {
+			found = asked
 		}
 	}
-	if found == "" {
+	if found == nil {
 		return inlineQuestion{}, false
 	}
-	return *b.asked[found], true
+	return *found, true
 }
 
 func (k *Kitchen) answerInlineQuery(p params) (any, error) {
