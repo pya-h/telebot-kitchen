@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"time"
@@ -23,13 +24,24 @@ type UpdateProcessor func(context.Context, *models.Update)
 func (k *Kitchen) DeliverTo(process UpdateProcessor) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.process, k.hook, k.polling = process, nil, false
+	k.process, k.hook, k.polling, k.wire = process, nil, false, false
+}
+
+func (k *Kitchen) DeliverToJSON(process func(context.Context, []byte)) {
+	k.DeliverToWebhook(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		update, err := io.ReadAll(r.Body)
+		if err != nil {
+			k.tb.Errorf("kitchen: read update: %v", err)
+			return
+		}
+		process(r.Context(), update)
+	}))
 }
 
 func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.hook, k.process, k.polling = handler, nil, false
+	k.hook, k.process, k.polling, k.wire = handler, nil, false, false
 }
 
 func (k *Kitchen) deliver(u models.Update) {
@@ -41,7 +53,7 @@ func (k *Kitchen) deliver(u models.Update) {
 
 	// Released before the bot runs: its own API calls take this lock too.
 	k.mu.RLock()
-	process, hook, polling := k.process, k.hook, k.polling
+	process, hook, polling, wire := k.process, k.hook, k.polling, k.wire
 	registered := k.webhook
 	k.mu.RUnlock()
 
@@ -50,10 +62,12 @@ func (k *Kitchen) deliver(u models.Update) {
 		k.post(hook, registered, u)
 	case process != nil:
 		process(context.Background(), &u)
-	case polling:
+	case wire && registered.url != "":
+		k.send(registered, u)
+	case polling || wire:
 		k.updates.add(u)
 	default:
-		k.tb.Errorf("kitchen: no bot bound, call DeliverTo, DeliverToWebhook or DeliverByPolling first")
+		k.tb.Errorf("kitchen: no bot bound, call DeliverTo, DeliverToWebhook, DeliverByPolling or DeliverOverHTTP first")
 	}
 }
 

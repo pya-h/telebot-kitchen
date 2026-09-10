@@ -38,8 +38,6 @@ func concierge(t *testing.T, k *Kitchen, b *bot.Bot) bot.HandlerFunc {
 	}
 }
 
-// record runs a conversation with the updates written to a tape, the way a bot
-// behind a webhook in production would have them written.
 func record(t *testing.T, path string) {
 	t.Helper()
 	tape, err := capture.To(path)
@@ -121,8 +119,6 @@ func TestAReplayPutsTheConversationBackFirst(t *testing.T) {
 	}
 }
 
-// The people and the rooms come back too, or a gate the bot runs on the way in
-// answers about somebody the kitchen has never heard of.
 func TestAReplayBringsBackTheRoomAndTheRoster(t *testing.T) {
 	tape := filepath.Join(t.TempDir(), "group.jsonl")
 	write(t, tape,
@@ -235,5 +231,27 @@ func TestARecordingOutOfOrderIsPutBackInOrder(t *testing.T) {
 	}
 	if newest := ada.Screen().Text; newest != "latest" {
 		t.Errorf("screen = %q, want the newest message rather than the last one restored", newest)
+	}
+}
+
+func TestAMessageTheRecordingEditedEndsWhereItEnded(t *testing.T) {
+	tape := filepath.Join(t.TempDir(), "edited.jsonl")
+	write(t, tape,
+		`{"update_id":1,"message":{"message_id":5,"date":1700000000,"text":"hello",`+
+			`"chat":{"id":7,"type":"private"},"from":{"id":7,"is_bot":false,"first_name":"Ada"}}}`,
+		`{"update_id":2,"edited_message":{"message_id":5,"date":1700000000,"edit_date":1700000009,`+
+			`"text":"goodbye","chat":{"id":7,"type":"private"},"from":{"id":7,"is_bot":false,"first_name":"Ada"}}}`,
+	)
+
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	k.Replay(tape)
+
+	ada := k.User(7)
+	if got := ada.Screen().Text; got != "goodbye" {
+		t.Errorf("message reads %q, want what the recording left it as", got)
+	}
+	if history := ada.History(); len(history) != 1 {
+		t.Errorf("history = %v, want the one message rather than both of its versions", history)
 	}
 }

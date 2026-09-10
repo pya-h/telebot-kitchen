@@ -65,6 +65,14 @@ updates by webhook or through a "handle one update" entry point.
   video notes, in both directions.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.
+- **Markup, read the way Telegram reads it** — `MarkdownV2`, `Markdown` and
+  `HTML` come off the text an assertion sees, and the spans they described are
+  there to assert on.
+- **Record and replay** — a live bot writes the updates it receives to a file;
+  the kitchen hands them back, so a production incident becomes a test.
+- **Three ways in, or a real port** — hand updates to a processor, post them to
+  a webhook handler, queue them for `getUpdates`, or run the whole fake as a
+  command so a bot in any language can be pointed at it and driven over HTTP.
 - **Stars payments** — invoices, the pre-checkout handshake and refunds, with a
   ledger that says whether a charge was given back.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts
@@ -80,14 +88,17 @@ updates by webhook or through a "handle one update" entry point.
 
 ## Status
 
-Early, active development. Work is organized in two phases:
+Both planned phases are in.
 
 - **Phase A — core.** The engine, virtual users, the messaging and callback
   surface, screen rendering, fault injection, and the tooling that makes tests
   pleasant to write. This is the substance of the toolbox.
 - **Phase B — completeness.** Broad Bot API coverage, group/channel/inline/
-  payment/poll surfaces, a standalone server binary, and library adapters — so
-  any Go Telegram bot has what it needs.
+  payment/poll surfaces, record and replay, a standalone server binary, and
+  library-agnostic delivery — so any Telegram bot has what it needs.
+
+It is used in anger by a real bot, and what it grows next is what a real bot
+turns out to need.
 
 ## Install
 

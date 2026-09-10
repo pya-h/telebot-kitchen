@@ -9,10 +9,10 @@ import (
 // Call is one Bot API method the bot invoked, with the parameters it sent. A
 // rejected call is on the record too, carrying the reason.
 type Call struct {
-	Method string
-	ChatID int64
-	Params map[string]string
-	Error  string
+	Method string            `json:"method"`
+	ChatID int64             `json:"chat_id,omitempty"`
+	Params map[string]string `json:"params,omitempty"`
+	Error  string            `json:"error,omitempty"`
 }
 
 // Text is what the call would put on screen, whichever field carried it.

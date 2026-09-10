@@ -98,17 +98,15 @@ func (q *pollQueue) peek(offset int64, limit int) []models.Update {
 	return got
 }
 
-// DeliverByPolling queues updates for a bot that fetches them itself, which is
-// the third way in and the only one where the kitchen pushes nothing.
 func (k *Kitchen) DeliverByPolling() {
 	k.mu.Lock()
 	defer k.mu.Unlock()
-	k.polling, k.process, k.hook = true, nil, nil
+	k.polling, k.process, k.hook, k.wire = true, nil, nil, false
 }
 
 func (k *Kitchen) getUpdates(p params) (any, error) {
 	k.mu.RLock()
-	hooked, polling := k.webhook.url != "", k.polling
+	hooked, polling := k.webhook.url != "", k.polling || k.wire
 	k.mu.RUnlock()
 
 	// The two cannot both be the way in, and Telegram says so rather than

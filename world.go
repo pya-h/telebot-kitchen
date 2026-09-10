@@ -472,10 +472,12 @@ func (w *world) restore(chatID int64, m models.Message) {
 	defer w.mu.Unlock()
 
 	c := w.chatAt(chatID)
-	if w.find(chatID, m.ID) != nil {
+	m.Chat = c.info
+	// Last seen wins: a message the recording went on to edit ends where it ended.
+	if already := w.find(chatID, m.ID); already != nil {
+		*already = m
 		return
 	}
-	m.Chat = c.info
 	at := len(c.messages)
 	for at > 0 && c.messages[at-1].ID > m.ID {
 		at--

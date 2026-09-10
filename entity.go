@@ -12,16 +12,13 @@ import (
 )
 
 type Entity struct {
-	Kind string
-	Text string
-	URL  string // where a link points
+	Kind string `json:"kind"`
+	Text string `json:"text"`
+	URL  string `json:"url,omitempty"` // where a link points
 }
 
 func cantParse(why string) *apiError { return requestError("can't parse entities: " + why) }
 
-// styled builds the plain text and the spans over it at once, because Telegram
-// counts offsets in UTF-16 code units: found afterwards they would have to be
-// measured against text the markup has already left.
 type styled struct {
 	text  strings.Builder
 	at    int
@@ -36,8 +33,6 @@ type span struct {
 	from int
 }
 
-// A <code> inside a <pre> names the language of the block rather than marking
-// up anything of its own, which is how HTML spells a fenced code block.
 const insidePre = models.MessageEntityType("")
 
 func (s *styled) write(text string) {
@@ -49,8 +44,6 @@ func (s *styled) push(kind models.MessageEntityType, url, lang string) {
 	s.stack = append(s.stack, span{kind: kind, url: url, lang: lang, from: s.at})
 }
 
-// pop closes the innermost span, and refuses anything else: Telegram lets
-// entities nest but not cross.
 func (s *styled) pop(kind models.MessageEntityType) bool {
 	last := len(s.stack) - 1
 	if last < 0 || s.stack[last].kind != kind {
@@ -58,7 +51,7 @@ func (s *styled) pop(kind models.MessageEntityType) bool {
 	}
 	one := s.stack[last]
 	s.stack = s.stack[:last]
-	// A span covering nothing is not something a client shows.
+
 	if one.kind != insidePre && s.at > one.from {
 		s.done = append(s.done, models.MessageEntity{
 			Type: one.kind, Offset: one.from, Length: s.at - one.from,
@@ -92,7 +85,12 @@ func (s *styled) finish() (string, []models.MessageEntity, error) {
 	if len(s.stack) > 0 {
 		return "", nil, cantParse("can't find end of " + string(s.stack[len(s.stack)-1].kind) + " entity")
 	}
-	slices.SortStableFunc(s.done, func(a, b models.MessageEntity) int { return a.Offset - b.Offset })
+	slices.SortStableFunc(s.done, func(a, b models.MessageEntity) int {
+		if a.Offset != b.Offset {
+			return a.Offset - b.Offset
+		}
+		return b.Length - a.Length
+	})
 	return s.text.String(), s.done, nil
 }
 
@@ -270,7 +268,7 @@ func markdownAt(rest string, v2 bool) (string, models.MessageEntityType, bool) {
 
 // fence reads a code block, whose first line may name the language it is in.
 func (s *styled) fence(rest string, v2 bool) (int, error) {
-	end := strings.Index(rest[3:], "```")
+	end := unescaped(rest[3:], "```", v2)
 	if end < 0 {
 		return 0, cantParse("can't find end of pre entity")
 	}
@@ -287,7 +285,7 @@ func (s *styled) fence(rest string, v2 bool) (int, error) {
 }
 
 func (s *styled) span(rest string, v2 bool) (int, error) {
-	end := strings.Index(rest[1:], "`")
+	end := unescaped(rest[1:], "`", v2)
 	if end < 0 {
 		return 0, cantParse("can't find end of code entity")
 	}
@@ -295,6 +293,20 @@ func (s *styled) span(rest string, v2 bool) (int, error) {
 	s.write(verbatim(rest[1:1+end], v2))
 	s.pop(models.MessageEntityTypeCode)
 	return 1 + end + 1, nil
+}
+
+// A backtick is how code ends, so one inside it has to be escaped past.
+func unescaped(rest, mark string, v2 bool) int {
+	for i := 0; i < len(rest); i++ {
+		if v2 && rest[i] == '\\' {
+			i++
+			continue
+		}
+		if strings.HasPrefix(rest[i:], mark) {
+			return i
+		}
+	}
+	return -1
 }
 
 // Nothing is marked up inside code, but an escape is still an escape.

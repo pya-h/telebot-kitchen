@@ -154,6 +154,12 @@ func (p params) number(name string) int {
 }
 
 func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
+	if strings.HasPrefix(r.URL.Path, controlPrefix) {
+		defer k.activity.note()
+		k.control(w, r)
+		return
+	}
+
 	token, method, ok := route(r.URL.Path)
 	if method != pollMethod {
 		// Even a call the kitchen turns away is progress a waiter may be watching for.

@@ -1014,6 +1014,70 @@ Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`
 `WithWaitTimeout`, `WithScrollback`. Options on `User`: `WithFullName`,
 `WithUsername`, `WithLanguage`.
 
+## Outside a test
+
+The same fake runs as a command, on a real port, so a bot in any language can be
+pointed at it and driven by hand.
+
+```sh
+go run github.com/pya-h/telebot-kitchen/cmd/kitchen -addr 127.0.0.1:8081
+```
+
+```
+kitchen serving on http://127.0.0.1:8081
+  token   1000000000:kitchen-test-token
+  bot api http://127.0.0.1:8081/bot1000000000:kitchen-test-token/<method>
+  control http://127.0.0.1:8081/kitchen/<verb>
+```
+
+Point the bot's API base at that URL and it boots against the kitchen. Updates
+reach it the way Telegram sends them: posted to whatever webhook it registered
+with `setWebhook`, and waiting for `getUpdates` when it registered none.
+
+The control surface drives the virtual users. Verbs take JSON on a `POST`, or
+query parameters on a `GET`, so a browser works as well as a script:
+
+```sh
+curl -XPOST :8081/kitchen/user -d '{"id":7,"first_name":"Ada","username":"ada"}'
+curl -XPOST :8081/kitchen/chat -d '{"id":-1001,"type":"supergroup","title":"Standup"}'
+curl -XPOST :8081/kitchen/join -d '{"user":7,"chat":-1001}'
+curl -XPOST :8081/kitchen/send -d '{"user":7,"chat":-1001,"text":"hi"}'
+curl -XPOST :8081/kitchen/tap  -d '{"user":7,"chat":-1001,"button":"English"}'
+
+curl ':8081/kitchen/screen?user=7&chat=-1001'
+curl ':8081/kitchen/history?chat=-1001'
+curl ':8081/kitchen/transcript?chat=-1001'
+curl  :8081/kitchen/calls
+```
+
+Also `/kitchen/command` (`{"name":"start","args":[…]}`), `/kitchen/leave` and
+`/kitchen/settle`. Nothing can fail a run that is not a test, so anything the
+kitchen would have failed comes back with the reply:
+
+```json
+{"ok":false,"errors":["kitchen: no chat is a \"parliament\"; say group, supergroup or channel"]}
+```
+
+`kitchen.New` takes any `TB`, and `kitchen.Logging(os.Stderr)` is the one to
+give it outside a test. `WithAddress` is what the command passes; a test may
+pass it too when something outside the process has to find the kitchen.
+
+### Wiring a bot that is not this one
+
+`DeliverToWebhook` already takes any `http.Handler`, so a library with a webhook
+handler needs nothing further. For one whose entry point takes its own update
+type, `DeliverToJSON` hands over the JSON Telegram would have sent and lets the
+caller unmarshal it — the kitchen will not import a bot library to save three
+lines:
+
+```go
+k.DeliverToJSON(func(ctx context.Context, update []byte) {
+	var u tele.Update
+	json.Unmarshal(update, &u)
+	b.ProcessUpdate(u)
+})
+```
+
 ## Not yet here
 
 This document grows with the surface, and describes only what ships today.

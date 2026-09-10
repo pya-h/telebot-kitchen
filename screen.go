@@ -9,27 +9,27 @@ import (
 )
 
 type Button struct {
-	Label string
-	Data  string
-	URL   string
+	Label string `json:"label"`
+	Data  string `json:"data,omitempty"`
+	URL   string `json:"url,omitempty"`
 }
 
 type Message struct {
-	ID            int
-	ChatID        int64
-	Text          string
-	From          string
-	FromBot       bool
-	ForwardedFrom string
-	Media         string
-	FileID        string
-	Album         string
-	Options       []string // what a poll asks, in the order it asks it
-	Reactions     []string
-	Entities      []Entity
-	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
-	Sent          time.Time
-	Keyboard      [][]Button
+	ID            int        `json:"id"`
+	ChatID        int64      `json:"chat_id"`
+	Text          string     `json:"text,omitempty"`
+	From          string     `json:"from,omitempty"`
+	FromBot       bool       `json:"from_bot,omitempty"`
+	ForwardedFrom string     `json:"forwarded_from,omitempty"`
+	Media         string     `json:"media,omitempty"`
+	FileID        string     `json:"file_id,omitempty"`
+	Album         string     `json:"album,omitempty"`
+	Options       []string   `json:"options,omitempty"` // what a poll asks, in the order it asks it
+	Reactions     []string   `json:"reactions,omitempty"`
+	Entities      []Entity   `json:"entities,omitempty"`
+	Event         string     `json:"event,omitempty"` // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
+	Sent          time.Time  `json:"sent"`
+	Keyboard      [][]Button `json:"keyboard,omitempty"`
 
 	rich    string
 	carries string

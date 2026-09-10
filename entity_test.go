@@ -279,3 +279,16 @@ func TestEachCaptionInAnAlbumIsReadOnItsOwn(t *testing.T) {
 		t.Errorf("history = %d messages, want nothing added by the refused album", after)
 	}
 }
+
+func TestCodeMayHoldTheBacktickThatWouldEndIt(t *testing.T) {
+	text, entities, err := styleOf("run "+"`git log \\`x\\``"+" first", "MarkdownV2")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if text != "run git log `x` first" {
+		t.Errorf("text = %q, want the escaped backticks inside the code", text)
+	}
+	if got := kinds(entitiesOf(text, entities)); !slices.Equal(got, []string{"code:git log `x`"}) {
+		t.Errorf("entities = %v, want one code span holding both", got)
+	}
+}

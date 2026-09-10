@@ -1,11 +1,9 @@
 // Package kitchen stands up an in-process fake Telegram Bot API and drives a
 // real bot through it, so a conversation becomes an ordinary Go test.
-//
-// The bot under test is never modified; only the server it talks to is
-// replaced. Point its API base at APIURL and give it Token.
 package kitchen
 
 import (
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -57,6 +55,7 @@ type Kitchen struct {
 	// than holding the server open until it has waited its whole timeout out.
 	closing chan struct{}
 
+	address     string
 	waitTimeout time.Duration
 
 	deliverMu sync.Mutex
@@ -66,6 +65,7 @@ type Kitchen struct {
 	webhook webhook
 	process UpdateProcessor
 	polling bool
+	wire    bool
 	hook    http.Handler
 	users   map[int64]*User
 }
@@ -84,6 +84,8 @@ func WithStartTime(t time.Time) Option { return func(k *Kitchen) { k.clock.now =
 
 // WithWaitTimeout caps how long the await primitives block before failing.
 func WithWaitTimeout(d time.Duration) Option { return func(k *Kitchen) { k.waitTimeout = d } }
+
+func WithAddress(addr string) Option { return func(k *Kitchen) { k.address = addr } }
 
 // WithScrollback lets a tap reach buttons on older messages; without it only the newest keyboard answers.
 func WithScrollback() Option { return func(k *Kitchen) { k.scrollback = true } }
@@ -116,7 +118,16 @@ func New(tb TB, opts ...Option) *Kitchen {
 	k.bot.ID = botIDFrom(k.token)
 	k.world = newWorld(k.clock, k.bot)
 
-	k.server = httptest.NewServer(http.HandlerFunc(k.serve))
+	k.server = httptest.NewUnstartedServer(http.HandlerFunc(k.serve))
+	if k.address != "" {
+		if listener, err := net.Listen("tcp", k.address); err != nil {
+			tb.Errorf("kitchen: listen on %s: %v", k.address, err)
+		} else {
+			k.server.Listener.Close()
+			k.server.Listener = listener
+		}
+	}
+	k.server.Start()
 	tb.Cleanup(k.close)
 	return k
 }
