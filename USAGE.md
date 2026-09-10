@@ -704,6 +704,65 @@ shows where it landed, not every version it passed through. Use it to catch a
 change in wording or layout, and step assertions to catch a change mid-flow.
 `k.ExpectGolden(path, text)` does the same for anything else you can render.
 
+## Record and replay
+
+An incident in production becomes an ordinary test. The bot records the updates
+it receives; the kitchen hands them back.
+
+Recording is a package of its own — `telebot-kitchen/capture` — because a live
+bot must not import the toolbox: the kitchen registers test flags and stands up
+servers, and neither belongs in a running binary. `capture` is standard library
+only, and what it writes is Telegram's own JSON.
+
+```go
+tape, err := capture.To("incidents/tuesday.jsonl")
+defer tape.Close()
+
+// A bot behind a webhook: wrap the handler and that is the whole change.
+http.Handle("/hook", tape.Webhook(bot.WebhookHandler(), func(err error) {
+	log.Printf("capture: %v", err)
+}))
+```
+
+A bot that fetches its own updates calls `tape.Add(raw)` for each instead. Either
+way one update lands per line as it arrives, so a bot that dies mid-incident
+still leaves behind what led up to it, and a restart appends rather than starts
+over. A recording that fails never costs the bot an update; `onError` hears
+about it.
+
+Back in a test:
+
+```go
+func TestTuesday(t *testing.T) {
+	k := kitchen.New(t)
+	k.DeliverTo(app.New(...).Handle)
+
+	k.Replay(filepath.Join("testdata", "tuesday.jsonl"))
+	k.Settle()
+
+	ada := k.User(41902)
+	ada.Expect(kitchen.TextContains("Something went wrong"))
+}
+```
+
+`Replay` seats the whole cast before the first update lands — every chat with
+the kind and title it had, every person on the roster of the chat they spoke in,
+and every message the recording carries back at the id it had. So a tap resolves
+against the screen it was really made on, a gate reading `getChatMember` is
+answered about somebody who only speaks later, and an edit lands where it landed
+in production. Messages the recorded bot sent come back as this kitchen's bot,
+so they read as its own. `ReplayFrom(r)` does the same for a recording that is
+not a file.
+
+**The bot does its work again.** Replaying the update that made it greet
+somebody makes it greet them again, and that greeting joins the one the
+recording already put back. Both are the truth — it really did send two — and
+the chat shows both. What a replay reproduces is the bot's behaviour, not the
+chat's final state; assert on what the bot did.
+
+Update ids stay the kitchen's own. What was recorded is the order, not the
+numbering, so a replayed run is as repeatable as any other.
+
 ## Paying with Stars
 
 An invoice the bot sends is paid the way Telegram sequences it: the bot is asked

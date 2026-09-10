@@ -451,6 +451,41 @@ func (w *world) add(chatID int64, m models.Message) models.Message {
 	return handed(&m)
 }
 
+// describe registers a chat from a recording, which knows more about it than a
+// test standing one up by hand does.
+func (w *world) describe(info models.Chat) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c := w.chatOf(info.ID, info.Type, info.Title, w.bot)
+	if info.Username != "" {
+		c.info.Username = info.Username
+	}
+	if info.FirstName != "" {
+		c.info.FirstName, c.info.LastName = info.FirstName, info.LastName
+	}
+}
+
+// restore puts a recorded message back at the id it had
+func (w *world) restore(chatID int64, m models.Message) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c := w.chatAt(chatID)
+	if w.find(chatID, m.ID) != nil {
+		return
+	}
+	m.Chat = c.info
+	at := len(c.messages)
+	for at > 0 && c.messages[at-1].ID > m.ID {
+		at--
+	}
+	c.messages = slices.Insert(c.messages, at, &m)
+	if m.ID >= c.nextMessageID {
+		c.nextMessageID = m.ID + 1
+	}
+}
+
 func (w *world) message(chatID int64, messageID int) (models.Message, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -487,8 +522,6 @@ func (w *world) onPoll(chatID int64, messageID int, change func(*models.Poll)) (
 	return copyPoll(m.Poll), true
 }
 
-// newestPoll is the poll a member answers when they answer one, since a chat
-// shows the latest and Telegram gives them no way to reach back past it.
 func (w *world) newestPoll(chatID int64) (models.Poll, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
