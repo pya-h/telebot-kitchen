@@ -1,9 +1,11 @@
 package kitchen
 
-import "github.com/go-telegram/bot/models"
+import (
+	"fmt"
 
-// A media kind is one Bot API send method: the parameter it carries its file
-// in, and where that file lands on the message it produces.
+	"github.com/go-telegram/bot/models"
+)
+
 type mediaKind struct {
 	method string
 	param  string
@@ -21,8 +23,6 @@ var mediaKinds = []mediaKind{
 	{"sendVideoNote", "video_note", putVideoNote},
 }
 
-// The kinds an edit may put in a message's place: Telegram has no InputMedia
-// for a sticker, a voice note or a video note, so those three can only be sent.
 var editableKinds = map[string]func(*models.Message, File){}
 
 func init() {
@@ -44,6 +44,12 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 	if file == "" {
 		return nil, badRequest(kind.param)
 	}
+	// Read before accept, so markup the kitchen cannot read leaves the keyboard
+	// already up alone.
+	caption, entities, err := p.styled("caption", "caption_entities")
+	if err != nil {
+		return nil, err
+	}
 	markup, err := k.accept(p, chatID)
 	if err != nil {
 		return nil, err
@@ -53,7 +59,7 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 	sent := models.Message{From: &sender, ReplyMarkup: markup}
 	kind.put(&sent, k.files.fileOf(file))
 	if _, captioned := mediaOf(&sent); captioned {
-		sent.Caption = p["caption"]
+		sent.Caption, sent.CaptionEntities = caption, entities
 	}
 	return k.world.add(chatID, sent), nil
 }
@@ -93,8 +99,21 @@ func mediaOf(m *models.Message) (label string, captioned bool) {
 	return "", false
 }
 
-// fileIn is the id of the file a message carries, so an edit that would change
-// nothing can be refused the way Telegram refuses one.
+func (k *Kitchen) carried(m *models.Message) string {
+	label, _ := mediaOf(m)
+	if label == "" {
+		return ""
+	}
+	// A venue carries coordinates too, but a client shows it by its title.
+	if m.Location != nil && m.Venue == nil {
+		return fmt.Sprintf("%s %.4f, %.4f", label, m.Location.Latitude, m.Location.Longitude)
+	}
+	if file, known := k.files.get(fileIn(m)); known && file.Name != "" {
+		return label + " " + file.Name
+	}
+	return label
+}
+
 func fileIn(m *models.Message) string {
 	switch {
 	case len(m.Photo) > 0:

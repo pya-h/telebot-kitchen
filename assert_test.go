@@ -115,7 +115,7 @@ func TestUserExpectReportsTheMismatch(t *testing.T) {
 	user.Expect(HasButton("Deutsch"))
 
 	errs := tb.errors()
-	if len(errs) != 1 || !strings.Contains(errs[0], "menu\n[English] [فارسی]") {
+	if len(errs) != 1 || !strings.Contains(errs[0], "menu\n[English] [⁨فارسی⁩]") {
 		t.Errorf("errors = %v, want the screen the user actually had", errs)
 	}
 }

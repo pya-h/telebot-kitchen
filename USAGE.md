@@ -486,8 +486,8 @@ Two sources, one vocabulary.
 **The screen** is what the user would see: `ada.Screen()` for the newest message,
 `ada.History()` for the whole chat, `k.History(chatID)` for any chat. In a shared
 chat the same verbs hang off `ada.In(team)`. A `Message`
-carries `Text`, `From`, `Keyboard`, `Media`, `FileID`, `Album`, `ForwardedFrom`, `Sent`, and prints
-itself the way a client shows it.
+carries `Text`, `From`, `Keyboard`, `Media`, `FileID`, `Album`, `Entities`,
+`ForwardedFrom`, `Sent`, and prints itself the way a client shows it.
 
 **The record** is every call the bot made: `k.Calls()`, filtered with
 `Matching` / `Count` / `Has` / `First` / `Last`. Rejected calls stay on it,
@@ -496,6 +496,47 @@ carrying the reason, and so does the library's own `getMe` handshake.
 Both are matched with the same matchers: `Method`, `ToChat`, `ToUser`, `TextIs`,
 `TextContains`, `HasButton`, `Param`, combined with `All` and `Any`. `Method` and
 `Param` describe a call, so they never match a message on screen.
+
+### Markup, and what a test reads
+
+A bot writing in `MarkdownV2`, `Markdown` or `HTML` is writing for a person, and
+that is what `Text` gives back:
+
+```go
+b.SendMessage(ctx, &bot.SendMessageParams{
+	ChatID: ada.ID(), ParseMode: models.ParseModeMarkdown,
+	Text: `Welcome, *Ada*\! Your ticket is ` + "`T-4417`" + `\.`,
+})
+
+ada.Expect(kitchen.TextIs("Welcome, Ada! Your ticket is T-4417."))
+```
+
+The markup comes off exactly where Telegram takes it off, so an assertion never
+has to know how the bot spelled it. What it meant is on `Entities`, each span
+named by the words it covers rather than by where it starts:
+
+```go
+ada.Screen().Entities
+// [{bold Ada } {code T-4417 } {text_link the rules https://t.me/rules}]
+```
+
+Spans are measured the way Telegram measures them, in UTF-16 code units, so an
+emoji ahead of a Persian word still finds the word. Entities the bot describes
+outright win over a parse mode, as they do live, and markup the kitchen cannot
+read is refused the way Telegram refuses it — an unclosed `*`, a crossing pair,
+a tag Telegram has no meaning for.
+
+`MarkdownV2` and `Markdown` cover bold, italic, underline, strikethrough,
+spoiler, code, code blocks and links; `HTML` covers those and `<blockquote>`.
+Telegram's own auto-detection — a bare URL, an `@name` — is not done for the
+bot's text, though a member's `/command` still carries its entity.
+
+A transcript puts the markup back on, which is what tells a golden file that a
+word was bold:
+
+```
+**Concierge:** Welcome, **Ada**! See [the rules](https://t.me/rules).
+```
 
 ## Asserting
 
@@ -650,6 +691,13 @@ func TestTheWholeConversationReads(t *testing.T) {
 ```sh
 go test ./... -kitchen.update    # rewrite every golden the run touches
 ```
+
+A message with no words of its own shows what it carries and enough to tell two
+of them apart — `(photo lunch.jpg)`, `(document terms.pdf) sign here`,
+`(location 35.7000, 51.4000)`. Text that runs right to left is fenced off from
+the frame around it, so a Persian reply does not drag the name and the brackets
+to the wrong side of the line. Nothing else is touched: a transcript with no
+such text reads as the same plain bytes it always did.
 
 A transcript is the chat's final state, not a replay: a menu edited in place
 shows where it landed, not every version it passed through. Use it to catch a

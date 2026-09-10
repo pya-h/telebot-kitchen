@@ -26,9 +26,13 @@ type Message struct {
 	Album         string
 	Options       []string // what a poll asks, in the order it asks it
 	Reactions     []string
+	Entities      []Entity
 	Event         string // "joined", "left", "pinned", "moved", "invoice", "paid" or "refunded"
 	Sent          time.Time
 	Keyboard      [][]Button
+
+	rich    string
+	carries string
 }
 
 // Screen is what the user has at the top of their chat right now.
@@ -79,9 +83,9 @@ func (k *Kitchen) History(chatID int64) []Message {
 }
 
 func (k *Kitchen) view(m models.Message) Message {
-	text := m.Text
+	text, entities := m.Text, m.Entities
 	if text == "" {
-		text = m.Caption
+		text, entities = m.Caption, m.CaptionEntities
 	}
 
 	media, _ := mediaOf(&m)
@@ -129,6 +133,9 @@ func (k *Kitchen) view(m models.Message) Message {
 		Media:         media,
 		FileID:        fileIn(&m),
 		Album:         m.MediaGroupID,
+		Entities:      entitiesOf(text, entities),
+		rich:          markdownOf(text, entities),
+		carries:       k.carried(&m),
 		Options:       pollOptions(m.Poll),
 		Reactions:     k.reactions.on(m.Chat.ID, m.ID),
 		Event:         event,

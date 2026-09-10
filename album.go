@@ -77,17 +77,26 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 		return nil, err
 	}
 	var group []struct {
-		Type    string `json:"type"`
-		Media   string `json:"media"`
-		Caption string `json:"caption"`
+		Type            string                 `json:"type"`
+		Media           string                 `json:"media"`
+		Caption         string                 `json:"caption"`
+		ParseMode       string                 `json:"parse_mode"`
+		CaptionEntities []models.MessageEntity `json:"caption_entities"`
 	}
 	if err := p.decode("media", &group); err != nil {
 		return nil, badRequest("media")
 	}
 
+	// Every caption is read before any of the album lands, so markup the kitchen
+	// cannot read leaves no half-sent group behind.
 	kinds := make([]string, len(group))
-	for i, item := range group {
-		kinds[i] = item.Type
+	for i := range group {
+		kinds[i] = group[i].Type
+		caption, marked, err := styledText(group[i].Caption, group[i].ParseMode, group[i].CaptionEntities)
+		if err != nil {
+			return nil, err
+		}
+		group[i].Caption, group[i].CaptionEntities = caption, marked
 	}
 	if why := grouped(kinds); why != "" {
 		return nil, requestError(why)
@@ -100,7 +109,10 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 	album := k.world.nextAlbum()
 	sent := make([]models.Message, len(group))
 	for i, item := range group {
-		message := models.Message{From: &sender, MediaGroupID: album, Caption: item.Caption}
+		message := models.Message{
+			From: &sender, MediaGroupID: album,
+			Caption: item.Caption, CaptionEntities: item.CaptionEntities,
+		}
 		albumKinds[item.Type](&message, k.files.fileOf(p.attached(item.Media)))
 		sent[i] = k.world.add(chatID, message)
 	}

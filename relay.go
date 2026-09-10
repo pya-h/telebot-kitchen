@@ -26,6 +26,10 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	caption, entities, err := p.styled("caption", "caption_entities")
+	if err != nil {
+		return nil, err
+	}
 	markup, err := k.accept(p, target)
 	if err != nil {
 		return nil, err
@@ -38,8 +42,8 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	copied.SenderChat = nil
 	copied.ForwardOrigin = nil
 	copied.ReplyMarkup = markup
-	if _, captioned := mediaOf(&copied); captioned && p["caption"] != "" {
-		copied.Caption = p["caption"]
+	if _, captioned := mediaOf(&copied); captioned && caption != "" {
+		copied.Caption, copied.CaptionEntities = caption, entities
 	}
 
 	sent := k.world.add(target, copied)

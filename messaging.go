@@ -14,7 +14,10 @@ func (k *Kitchen) sendMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text := p["text"]
+	text, entities, err := p.styled("text", "entities")
+	if err != nil {
+		return nil, err
+	}
 	if text == "" {
 		return nil, requestError("message text is empty")
 	}
@@ -24,7 +27,9 @@ func (k *Kitchen) sendMessage(p params) (any, error) {
 	}
 
 	sender := k.botUser()
-	return k.world.add(chatID, models.Message{From: &sender, Text: text, ReplyMarkup: markup}), nil
+	return k.world.add(chatID, models.Message{
+		From: &sender, Text: text, Entities: entities, ReplyMarkup: markup,
+	}), nil
 }
 
 // accept clears a send to go ahead, handing back the inline keyboard it carries.
@@ -49,7 +54,10 @@ func (k *Kitchen) accept(p params, chatID int64) (*models.InlineKeyboardMarkup, 
 }
 
 func (k *Kitchen) editMessageText(p params) (any, error) {
-	text := p["text"]
+	text, entities, err := p.styled("text", "entities")
+	if err != nil {
+		return nil, err
+	}
 	if text == "" {
 		return nil, requestError("message text is empty")
 	}
@@ -62,16 +70,19 @@ func (k *Kitchen) editMessageText(p params) (any, error) {
 		if label, _ := mediaOf(m); label != "" {
 			return requestError("there is no text in the message to edit")
 		}
-		if m.Text == text && sameMarkup(m.ReplyMarkup, markup) {
+		if m.Text == text && slices.Equal(m.Entities, entities) && sameMarkup(m.ReplyMarkup, markup) {
 			return errNotModified
 		}
-		m.Text, m.ReplyMarkup = text, markup
+		m.Text, m.Entities, m.ReplyMarkup = text, entities, markup
 		return nil
 	})
 }
 
 func (k *Kitchen) editMessageCaption(p params) (any, error) {
-	caption := p["caption"]
+	caption, entities, err := p.styled("caption", "caption_entities")
+	if err != nil {
+		return nil, err
+	}
 	markup, err := p.markup()
 	if err != nil {
 		return nil, err
@@ -81,19 +92,21 @@ func (k *Kitchen) editMessageCaption(p params) (any, error) {
 		if _, captioned := mediaOf(m); !captioned {
 			return requestError("there is no caption in the message to edit")
 		}
-		if m.Caption == caption && sameMarkup(m.ReplyMarkup, markup) {
+		if m.Caption == caption && slices.Equal(m.CaptionEntities, entities) && sameMarkup(m.ReplyMarkup, markup) {
 			return errNotModified
 		}
-		m.Caption, m.ReplyMarkup = caption, markup
+		m.Caption, m.CaptionEntities, m.ReplyMarkup = caption, entities, markup
 		return nil
 	})
 }
 
 func (k *Kitchen) editMessageMedia(p params) (any, error) {
 	var replacement struct {
-		Type    string `json:"type"`
-		Media   string `json:"media"`
-		Caption string `json:"caption"`
+		Type            string                 `json:"type"`
+		Media           string                 `json:"media"`
+		Caption         string                 `json:"caption"`
+		ParseMode       string                 `json:"parse_mode"`
+		CaptionEntities []models.MessageEntity `json:"caption_entities"`
 	}
 	if err := p.decode("media", &replacement); err != nil || replacement.Media == "" {
 		return nil, badRequest("media")
@@ -101,6 +114,10 @@ func (k *Kitchen) editMessageMedia(p params) (any, error) {
 	put, editable := editableKinds[replacement.Type]
 	if !editable {
 		return nil, requestError("type of the media to edit is not supported")
+	}
+	caption, entities, err := styledText(replacement.Caption, replacement.ParseMode, replacement.CaptionEntities)
+	if err != nil {
+		return nil, err
 	}
 	markup, err := p.markup()
 	if err != nil {
@@ -112,12 +129,13 @@ func (k *Kitchen) editMessageMedia(p params) (any, error) {
 		if label, _ := mediaOf(m); label == "" || m.Location != nil {
 			return requestError("there is no media in the message to edit")
 		}
-		if fileIn(m) == file.ID && m.Caption == replacement.Caption && sameMarkup(m.ReplyMarkup, markup) {
+		if fileIn(m) == file.ID && m.Caption == caption &&
+			slices.Equal(m.CaptionEntities, entities) && sameMarkup(m.ReplyMarkup, markup) {
 			return errNotModified
 		}
 		clearMedia(m)
 		put(m, file)
-		m.Caption, m.ReplyMarkup = replacement.Caption, markup
+		m.Caption, m.CaptionEntities, m.ReplyMarkup = caption, entities, markup
 		return nil
 	})
 }
