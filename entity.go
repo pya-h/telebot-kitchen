@@ -193,7 +193,11 @@ func attributeIn(attrs, name string) string {
 		return ""
 	}
 	rest = strings.TrimLeft(rest, `"'`)
-	return rest[:strings.IndexAny(rest+`"`, `"'`)]
+	if end := strings.IndexAny(rest, `"'`); end >= 0 {
+		rest = rest[:end]
+	}
+	// A URL is written with &amp; to be HTML at all, and read back as &.
+	return html.UnescapeString(rest)
 }
 
 // The delimiters, longest first so "__" is not read as two italics.

@@ -83,6 +83,10 @@ func TestTheControlSurfaceDrivesAConversation(t *testing.T) {
 	ask(t, k, http.MethodPost, "/kitchen/chat", `{"id":-1001,"type":"supergroup","title":"Standup"}`)
 	ask(t, k, http.MethodPost, "/kitchen/join", `{"user":7,"chat":-1001}`)
 	ask(t, k, http.MethodPost, "/kitchen/send", `{"user":7,"chat":-1001,"text":"hi"}`)
+	// A verb that takes no fields is posted with no body at all.
+	if code, answer := ask(t, k, http.MethodPost, "/kitchen/settle", ""); code != http.StatusOK || answer["ok"] != true {
+		t.Fatalf("settle answered %d %v", code, answer)
+	}
 
 	code, answer := ask(t, k, http.MethodGet, "/kitchen/transcript?chat=-1001", "")
 	if code != http.StatusOK || answer["ok"] != true {
@@ -189,5 +193,21 @@ func TestDeliveryAsRawJSON(t *testing.T) {
 	defer mu.Unlock()
 	if len(seen) != 1 || !strings.Contains(seen[0], `"text":"hi"`) {
 		t.Errorf("delivered %v, want the update as Telegram's own JSON", seen)
+	}
+}
+
+func TestARefusedControlCallIsStillJSON(t *testing.T) {
+	k, _ := standalone(t)
+
+	res, err := http.Get(k.APIURL() + "/kitchen/chat?id=-1&type=parliament")
+	if err != nil {
+		t.Fatalf("get: %v", err)
+	}
+	defer res.Body.Close()
+	if res.StatusCode != http.StatusBadRequest {
+		t.Fatalf("status = %d, want it refused", res.StatusCode)
+	}
+	if got := res.Header.Get("Content-Type"); got != "application/json" {
+		t.Errorf("Content-Type = %q, want the refusal to read as JSON too", got)
 	}
 }

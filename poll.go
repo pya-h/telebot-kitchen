@@ -74,6 +74,23 @@ func tallied(p *models.Poll, votes map[int64][]int) {
 	p.TotalVoterCount = len(votes)
 }
 
+// relaid lands a message that was forwarded or copied. A poll is the one thing
+// it cannot bring along: two messages sharing an id would tally a vote cast in
+// one chat against the other.
+func (k *Kitchen) relaid(chatID int64, m models.Message) models.Message {
+	if m.Poll != nil {
+		fresh := copyPoll(m.Poll)
+		fresh.ID = k.world.nextPoll()
+		tallied(&fresh, nil)
+		m.Poll = &fresh
+	}
+	sent := k.world.add(chatID, m)
+	if sent.Poll != nil {
+		k.polls.put(sent.Poll.ID, chatID, sent.ID, true)
+	}
+	return sent
+}
+
 func (k *Kitchen) sendPoll(p params) (any, error) {
 	chatID, err := p.chatID()
 	if err != nil {

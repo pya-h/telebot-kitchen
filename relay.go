@@ -15,10 +15,9 @@ func (k *Kitchen) forwardMessage(p params) (any, error) {
 	forwarded.EditDate = 0
 	// Whose message it is now depends on where it lands, not on where it came from.
 	forwarded.SenderChat = nil
-	// Telegram strips inline keyboards on a forward
 	forwarded.ReplyMarkup = nil
 
-	return k.world.add(target, forwarded), nil
+	return k.relaid(target, forwarded), nil
 }
 
 func (k *Kitchen) copyMessage(p params) (any, error) {
@@ -46,7 +45,7 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 		copied.Caption, copied.CaptionEntities = caption, entities
 	}
 
-	sent := k.world.add(target, copied)
+	sent := k.relaid(target, copied)
 	return models.MessageID{ID: sent.ID}, nil
 }
 

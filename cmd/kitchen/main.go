@@ -31,10 +31,11 @@ func main() {
 	}
 
 	k := kitchen.New(said, opts...)
-	defer said.Close()
 	if said.Failed() {
+		said.Close()
 		os.Exit(1)
 	}
+	defer said.Close()
 	k.DeliverOverHTTP()
 
 	fmt.Printf("kitchen serving on %s\n", k.APIURL())

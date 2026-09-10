@@ -15,12 +15,21 @@ type Call struct {
 	Error  string            `json:"error,omitempty"`
 }
 
-// Text is what the call would put on screen, whichever field carried it.
+// Text is what the call would put on screen, whichever field carried it, markup
+// off: a matcher means the same against a call as against the message it becomes.
 func (c Call) Text() string {
-	if text := c.Params["text"]; text != "" {
+	if text := c.plain("text", "entities"); text != "" {
 		return text
 	}
-	return c.Params["caption"]
+	return c.plain("caption", "caption_entities")
+}
+
+func (c Call) plain(field, marked string) string {
+	text, _, err := params(c.Params).styled(field, marked)
+	if err != nil {
+		return c.Params[field] // the spelling the kitchen refused, shown as it was sent
+	}
+	return text
 }
 
 func (c Call) Keyboard() [][]Button {

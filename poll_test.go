@@ -399,3 +399,48 @@ func TestAPollTheBotWasHandedDoesNotChangeUnderIt(t *testing.T) {
 		t.Errorf("the poll the bot was handed grew a vote it was never told about: %+v", seen.Options)
 	}
 }
+
+// A vote and a closing both have to land on the message the member is looking
+// at, not on the one it was relayed from.
+func TestAPollRelayedElsewhereIsAPollOfItsOwn(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ada, bob := k.User(7), k.User(8)
+
+	asked(t, k, b, ada, &bot.SendPollParams{
+		Question: "Pizza or pasta?",
+		Options:  []models.InputPollOption{{Text: "pizza"}, {Text: "pasta"}},
+	})
+	ada.Vote("pasta")
+	if _, err := b.CopyMessage(context.Background(), &bot.CopyMessageParams{
+		ChatID: bob.ChatID(), FromChatID: ada.ChatID(), MessageID: messageWithPoll(t, k, ada.ChatID()),
+	}); err != nil {
+		t.Fatalf("copy: %v", err)
+	}
+
+	landed := pollIn(t, k, bob.ChatID())
+	if landed.ID == pollIn(t, k, ada.ChatID()).ID {
+		t.Fatalf("the copy carries poll %s, the same one it was copied from", landed.ID)
+	}
+	if landed.TotalVoterCount != 0 {
+		t.Errorf("the copy landed with %d votes, want none of Ada's", landed.TotalVoterCount)
+	}
+
+	bob.Vote("pizza")
+	if got := pollIn(t, k, bob.ChatID()); got.Options[0].VoterCount != 1 || got.TotalVoterCount != 1 {
+		t.Errorf("Bob's poll = %v, want his vote counted where he cast it", got.Options)
+	}
+	if got := pollIn(t, k, ada.ChatID()); got.Options[0].VoterCount != 0 || got.TotalVoterCount != 1 {
+		t.Errorf("Ada's poll = %v, want it untouched by Bob", got.Options)
+	}
+
+	if _, err := b.StopPoll(context.Background(), &bot.StopPollParams{
+		ChatID: bob.ChatID(), MessageID: messageWithPoll(t, k, bob.ChatID()),
+	}); err != nil {
+		t.Fatalf("stop the copy: %v", err)
+	}
+	if pollIn(t, k, ada.ChatID()).IsClosed {
+		t.Error("closing the copy closed the poll it was copied from")
+	}
+}

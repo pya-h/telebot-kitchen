@@ -512,8 +512,11 @@ ada.Expect(kitchen.TextIs("Welcome, Ada! Your ticket is T-4417."))
 ```
 
 The markup comes off exactly where Telegram takes it off, so an assertion never
-has to know how the bot spelled it. What it meant is on `Entities`, each span
-named by the words it covers rather than by where it starts:
+has to know how the bot spelled it — on the record as well as on screen, since
+`TextIs` has to mean one thing wherever it is aimed. `Param("text", ...)` is
+still the spelling itself, for a test that is checking that. What the markup
+meant is on `Entities`, each span named by the words it covers rather than by
+where it starts:
 
 ```go
 ada.Screen().Entities

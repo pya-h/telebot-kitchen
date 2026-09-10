@@ -188,9 +188,12 @@ func TestACaptionIsStyledLikeText(t *testing.T) {
 	if want := "(photo) lunch at **Rossi**"; screen.String() != want {
 		t.Errorf("screen = %q, want %q", screen.String(), want)
 	}
+	if !k.Calls().Has(Method("sendPhoto"), TextIs("lunch at Rossi")) {
+		call, _ := k.Calls().Last(Method("sendPhoto"))
+		t.Errorf("the call reads %q, want the caption as the screen shows it", call.Text())
+	}
 }
 
-// An edit that only changes the markup still changes the message.
 func TestAnEditThatOnlyRestylesIsStillAnEdit(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
@@ -290,5 +293,40 @@ func TestCodeMayHoldTheBacktickThatWouldEndIt(t *testing.T) {
 	}
 	if got := kinds(entitiesOf(text, entities)); !slices.Equal(got, []string{"code:git log `x`"}) {
 		t.Errorf("entities = %v, want one code span holding both", got)
+	}
+}
+
+func TestALinkTargetLosesItsHTMLEscapes(t *testing.T) {
+	text, entities, err := styleOf(`<a href="https://x.test/?a=1&amp;b=2">go</a>`, "HTML")
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	if got := kinds(entitiesOf(text, entities)); !slices.Equal(got, []string{"text_link:go(https://x.test/?a=1&b=2)"}) {
+		t.Errorf("entities = %v, want the target read back with a plain &", got)
+	}
+}
+
+// The same matcher has to mean the same thing wherever it is aimed: the call
+// the bot made carries the markup, the message it becomes does not.
+func TestAMatcherReadsACallTheWayItReadsTheMessage(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ada := k.User(7)
+
+	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
+		ChatID: ada.ID(), ParseMode: models.ParseModeMarkdown,
+		Text: `Welcome, *Ada*\!`,
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	plain := "Welcome, Ada!"
+	if !k.Calls().Has(Method("sendMessage"), TextIs(plain)) {
+		call, _ := k.Calls().Last(Method("sendMessage"))
+		t.Errorf("the call reads %q, want %q as the screen does", call.Text(), plain)
+	}
+	// The spelling itself is still there for a test that wants it.
+	if !k.Calls().Has(Param("text", `Welcome, *Ada*\!`)) {
+		t.Error("the raw text parameter is gone from the record")
 	}
 }

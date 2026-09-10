@@ -115,13 +115,15 @@ func (m *Member) nextReply() (Message, bool) {
 	return next, ok
 }
 
+// A waiter rechecks this on every stir, so it asks for the one message rather
+// than rendering the whole chat.
 func (m *Member) peekReply() (Message, bool) {
-	for _, sent := range m.chat.History() {
-		if sent.FromBot && sent.ID > m.awaiting {
-			return sent, true
-		}
+	k := m.kitchen()
+	next, found := k.world.nextBy(m.chat.id, k.botUser().ID, m.awaiting)
+	if !found {
+		return Message{}, false
 	}
-	return Message{}, false
+	return k.view(next), true
 }
 
 // Whatever is on screen when a member acts is answered by what comes after it.

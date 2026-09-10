@@ -2,6 +2,8 @@ package kitchen
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -70,20 +72,21 @@ func (k *Kitchen) control(w http.ResponseWriter, r *http.Request) {
 	if result != nil {
 		answer["result"] = result
 	}
+	// Ahead of the status: a header set after one never goes out.
+	w.Header().Set("Content-Type", "application/json")
 	if watching {
 		if wrong := said.since(mark); len(wrong) > 0 {
 			answer["ok"], answer["errors"] = false, wrong
 			w.WriteHeader(http.StatusBadRequest)
 		}
 	}
-	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(answer)
 }
 
 func ordered(r *http.Request) (order, error) {
 	var asked order
 	if r.Method != http.MethodGet {
-		if err := json.NewDecoder(r.Body).Decode(&asked); err != nil && err.Error() != "EOF" {
+		if err := json.NewDecoder(r.Body).Decode(&asked); err != nil && !errors.Is(err, io.EOF) {
 			return asked, err
 		}
 		return asked, nil

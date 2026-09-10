@@ -588,7 +588,7 @@ func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, er
 		if err := c.mayDelete(m, botID); err != nil {
 			return true, err
 		}
-		c.messages = append(c.messages[:i], c.messages[i+1:]...)
+		c.messages = slices.Delete(c.messages, i, i+1)
 		c.pinned = slices.DeleteFunc(c.pinned, func(id int) bool { return id == messageID })
 		return true, nil
 	}
@@ -637,6 +637,22 @@ func (w *world) latest(chatID int64) (models.Message, bool) {
 		return models.Message{}, false
 	}
 	return handed(c.messages[len(c.messages)-1]), true
+}
+
+func (w *world) nextBy(chatID, sender int64, after int) (models.Message, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return models.Message{}, false
+	}
+	for _, m := range c.messages {
+		if m.ID > after && m.From != nil && m.From.ID == sender {
+			return handed(m), true
+		}
+	}
+	return models.Message{}, false
 }
 
 func (w *world) history(chatID int64) []models.Message {
