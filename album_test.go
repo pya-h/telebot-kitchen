@@ -20,8 +20,8 @@ func sendAlbum(t *testing.T, k *Kitchen, media string) apiReply {
 func TestAnAlbumIsSeveralMessagesUnderOneGroup(t *testing.T) {
 	k := New(t)
 	reply := sendAlbum(t, k, `[
-		{"type":"photo","media":"one","caption":"the pair"},
-		{"type":"video","media":"two"}
+		{"type":"photo","media":"`+k.Upload("photo", "", nil).ID+`","caption":"the pair"},
+		{"type":"video","media":"`+k.Upload("video", "", nil).ID+`"}
 	]`)
 	if !reply.OK {
 		t.Fatalf("sendMediaGroup = %+v, want it served", reply)
@@ -42,7 +42,8 @@ func TestAnAlbumIsSeveralMessagesUnderOneGroup(t *testing.T) {
 // Two albums in a chat are two groups, or a bot reading by group would read both as one.
 func TestTwoAlbumsAreTwoGroups(t *testing.T) {
 	k := New(t)
-	pair := `[{"type":"photo","media":"one"},{"type":"photo","media":"two"}]`
+	one, two := k.Upload("photo", "", nil).ID, k.Upload("photo", "", nil).ID
+	pair := `[{"type":"photo","media":"` + one + `"},{"type":"photo","media":"` + two + `"}]`
 	sendAlbum(t, k, pair)
 	sendAlbum(t, k, pair)
 
@@ -80,7 +81,8 @@ func TestOnlySomeKindsTravelTogether(t *testing.T) {
 	}
 
 	if reply := sendAlbum(t, k, `[
-		{"type":"document","media":"a"},{"type":"document","media":"b"}
+		{"type":"document","media":"`+k.Upload("document", "", nil).ID+`"},
+		{"type":"document","media":"`+k.Upload("document", "", nil).ID+`"}
 	]`); !reply.OK {
 		t.Errorf("an album of documents = %+v, want it served", reply)
 	}

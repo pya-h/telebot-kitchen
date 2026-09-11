@@ -104,6 +104,12 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 	if err := k.world.mayPost(chatID); err != nil {
 		return nil, err
 	}
+	files := make([]File, len(group))
+	for i, item := range group {
+		if files[i], err = k.files.resolve(p.attached(item.Media), item.Type); err != nil {
+			return nil, err
+		}
+	}
 
 	sender := k.botUser()
 	album := k.world.nextAlbum()
@@ -113,7 +119,7 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 			From: &sender, MediaGroupID: album,
 			Caption: item.Caption, CaptionEntities: item.CaptionEntities,
 		}
-		albumKinds[item.Type](&message, k.files.fileOf(p.attached(item.Media)))
+		albumKinds[item.Type](&message, files[i])
 		sent[i] = k.world.add(chatID, message)
 	}
 	return sent, nil
@@ -133,7 +139,7 @@ func (m *Member) SendAlbum(files ...Attachment) {
 	messages := make([]models.Message, len(files))
 	for i, file := range files {
 		messages[i] = models.Message{MediaGroupID: album, Caption: file.caption}
-		albumKinds[file.kind](&messages[i], m.kitchen().files.add(file.name, file.data))
+		albumKinds[file.kind](&messages[i], m.kitchen().files.issue(file.kind, file.name, file.data))
 	}
 	m.sayAll(messages...)
 }

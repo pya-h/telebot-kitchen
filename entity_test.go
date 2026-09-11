@@ -170,7 +170,7 @@ func TestACaptionIsStyledLikeText(t *testing.T) {
 
 	_, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID:    ada.ID(),
-		Photo:     &models.InputFileString{Data: "photo-id"},
+		Photo:     &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
 		Caption:   "lunch at *Rossi*",
 		ParseMode: models.ParseModeMarkdown,
 	})
@@ -249,8 +249,8 @@ func TestEachCaptionInAnAlbumIsReadOnItsOwn(t *testing.T) {
 	_, err := b.SendMediaGroup(context.Background(), &bot.SendMediaGroupParams{
 		ChatID: ada.ID(),
 		Media: []models.InputMedia{
-			&models.InputMediaPhoto{Media: "one", Caption: "lunch at *Rossi*", ParseMode: models.ParseModeMarkdown},
-			&models.InputMediaPhoto{Media: "two", Caption: "and <i>pudding</i>", ParseMode: models.ParseModeHTML},
+			&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: "lunch at *Rossi*", ParseMode: models.ParseModeMarkdown},
+			&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: "and <i>pudding</i>", ParseMode: models.ParseModeHTML},
 		},
 	})
 	if err != nil {
@@ -271,8 +271,8 @@ func TestEachCaptionInAnAlbumIsReadOnItsOwn(t *testing.T) {
 	_, err = b.SendMediaGroup(context.Background(), &bot.SendMediaGroupParams{
 		ChatID: ada.ID(),
 		Media: []models.InputMedia{
-			&models.InputMediaPhoto{Media: "three", Caption: "fine"},
-			&models.InputMediaPhoto{Media: "four", Caption: "*broken", ParseMode: models.ParseModeMarkdown},
+			&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: "fine"},
+			&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: "*broken", ParseMode: models.ParseModeMarkdown},
 		},
 	})
 	if err == nil {
@@ -306,8 +306,6 @@ func TestALinkTargetLosesItsHTMLEscapes(t *testing.T) {
 	}
 }
 
-// The same matcher has to mean the same thing wherever it is aimed: the call
-// the bot made carries the markup, the message it becomes does not.
 func TestAMatcherReadsACallTheWayItReadsTheMessage(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)

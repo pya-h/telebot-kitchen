@@ -2,9 +2,15 @@ package kitchen
 
 import (
 	"bytes"
+	"context"
 	"mime/multipart"
 	"net/http"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/go-telegram/bot"
+	"github.com/go-telegram/bot/models"
 )
 
 func TestMediaStoreIssuesStableIDs(t *testing.T) {
@@ -61,5 +67,48 @@ func TestUploadReadsBackAsFileID(t *testing.T) {
 	stored, ok := k.File(p["photo"])
 	if !ok || string(stored.Data) != "bytes" || stored.Name != "shot.jpg" {
 		t.Errorf("photo param %q did not resolve to the upload: %+v, %v", p["photo"], stored, ok)
+	}
+}
+
+// Telegram resends a photo with all of its sizes, whichever size's id it was given.
+func TestEachPhotoSizeIsAnIDForTheWholePhoto(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	k.User(7).SendPhoto("face.jpg", []byte("jpeg"), "")
+	received, _ := k.world.latest(7)
+	sizes := received.Photo
+
+	ids, uniques := map[string]bool{}, map[string]bool{}
+	for _, size := range sizes {
+		ids[size.FileID], uniques[size.FileUniqueID] = true, true
+		if f, ok := k.File(size.FileID); !ok || string(f.Data) != "jpeg" {
+			t.Errorf("the %dpx size = %+v %v, want it to read back as the photo", size.Width, f, ok)
+		}
+	}
+	if len(ids) != len(sizes) || len(uniques) != len(sizes) {
+		t.Errorf("sizes = %+v, want an id and a unique id of their own for each", sizes)
+	}
+
+	for _, size := range []models.PhotoSize{sizes[0], sizes[len(sizes)-1]} {
+		resent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
+			ChatID: otherChatID, Photo: &models.InputFileString{Data: size.FileID},
+		})
+		if err != nil {
+			t.Fatalf("re-send the %dpx size: %v", size.Width, err)
+		}
+		if !slices.Equal(resent.Photo, sizes) {
+			t.Errorf("re-sending the %dpx size landed %+v, want every size of the photo", size.Width, resent.Photo)
+		}
+	}
+}
+
+func TestUploadTakesOnlyAKindOfFile(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	New(tb).Upload("gif", "loop.gif", nil)
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "animation") {
+		t.Errorf("errors = %v, want one naming the kinds there are", errs)
 	}
 }

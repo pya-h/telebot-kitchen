@@ -84,6 +84,9 @@ func (k *Kitchen) seat(u models.Update, was int64) {
 			k.world.join(where.ID, person.telegram())
 		}
 	}
+	if carried != nil {
+		k.files.recall(carried)
+	}
 	if where != nil && carried != nil {
 		k.world.restore(where.ID, k.assigned(*carried, was))
 	}

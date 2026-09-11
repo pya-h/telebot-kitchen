@@ -23,11 +23,15 @@ var mediaKinds = []mediaKind{
 	{"sendVideoNote", "video_note", putVideoNote},
 }
 
-var editableKinds = map[string]func(*models.Message, File){}
+var (
+	fileKinds     = map[string]func(*models.Message, File){}
+	editableKinds = map[string]func(*models.Message, File){}
+)
 
 func init() {
 	for _, kind := range mediaKinds {
 		apiMethods[kind.method] = kind.send
+		fileKinds[kind.param] = kind.put
 		switch kind.param {
 		case "photo", "video", "animation", "audio", "document":
 			editableKinds[kind.param] = kind.put
@@ -50,6 +54,10 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	held, err := k.files.resolve(file, kind.param)
+	if err != nil {
+		return nil, err
+	}
 	markup, err := k.accept(p, chatID)
 	if err != nil {
 		return nil, err
@@ -57,7 +65,7 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 
 	sender := k.botUser()
 	sent := models.Message{From: &sender, ReplyMarkup: markup}
-	kind.put(&sent, k.files.fileOf(file))
+	kind.put(&sent, held)
 	if _, captioned := mediaOf(&sent); captioned {
 		sent.Caption, sent.CaptionEntities = caption, entities
 	}
@@ -115,25 +123,33 @@ func (k *Kitchen) carried(m *models.Message) string {
 }
 
 func fileIn(m *models.Message) string {
+	_, id, _ := fileOn(m)
+	return id
+}
+
+// fileOn is the kind of file a message carries and the ids it goes by, a photo's
+// largest size standing for the photo.
+func fileOn(m *models.Message) (kind, id, uniqueID string) {
 	switch {
 	case len(m.Photo) > 0:
-		return m.Photo[len(m.Photo)-1].FileID
+		largest := m.Photo[len(m.Photo)-1]
+		return "photo", largest.FileID, largest.FileUniqueID
 	case m.Voice != nil:
-		return m.Voice.FileID
+		return "voice", m.Voice.FileID, m.Voice.FileUniqueID
 	case m.Audio != nil:
-		return m.Audio.FileID
+		return "audio", m.Audio.FileID, m.Audio.FileUniqueID
 	case m.Video != nil:
-		return m.Video.FileID
+		return "video", m.Video.FileID, m.Video.FileUniqueID
 	case m.Animation != nil:
-		return m.Animation.FileID
+		return "animation", m.Animation.FileID, m.Animation.FileUniqueID
 	case m.Document != nil:
-		return m.Document.FileID
+		return "document", m.Document.FileID, m.Document.FileUniqueID
 	case m.Sticker != nil:
-		return m.Sticker.FileID
+		return "sticker", m.Sticker.FileID, m.Sticker.FileUniqueID
 	case m.VideoNote != nil:
-		return m.VideoNote.FileID
+		return "video_note", m.VideoNote.FileID, m.VideoNote.FileUniqueID
 	}
-	return ""
+	return "", "", ""
 }
 
 // Replacing media may change its kind, so the old one goes first.

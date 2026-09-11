@@ -91,19 +91,20 @@ func TestSendPhotoRetainsUpload(t *testing.T) {
 	}
 }
 
-// A file id from an earlier message is re-sent as a plain string, not bytes.
-func TestSendPhotoAcceptsExistingFileID(t *testing.T) {
+// A file id the bot's storage held before the test is re-sent as a plain string, not bytes.
+func TestSendPhotoAcceptsAFileIDTheBotAlreadyHeld(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
+	held := k.Upload("photo", "face.jpg", []byte("jpeg"))
 
 	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID: testChatID,
-		Photo:  &models.InputFileString{Data: "file-from-elsewhere"},
+		Photo:  &models.InputFileString{Data: held.ID},
 	})
 	if err != nil {
 		t.Fatalf("SendPhoto: %v", err)
 	}
-	if len(sent.Photo) == 0 || sent.Photo[0].FileID != "file-from-elsewhere" {
+	if got := fileIn(sent); got != held.ID {
 		t.Errorf("photo = %+v, want the file id it was sent with", sent.Photo)
 	}
 }
@@ -153,11 +154,12 @@ func TestEditRejectsIdenticalContent(t *testing.T) {
 }
 
 func TestEditMessageCaptionInPlace(t *testing.T) {
-	b := newClient(t, New(t))
+	k := New(t)
+	b := newClient(t, k)
 
 	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID:  testChatID,
-		Photo:   &models.InputFileString{Data: "file-1"},
+		Photo:   &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
 		Caption: "before",
 	})
 	if err != nil {
@@ -204,11 +206,12 @@ func TestEditMessageReplyMarkupKeepsText(t *testing.T) {
 }
 
 func TestEditTextRejectsAPhotoMessage(t *testing.T) {
-	b := newClient(t, New(t))
+	k := New(t)
+	b := newClient(t, k)
 
 	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID:  testChatID,
-		Photo:   &models.InputFileString{Data: "file-1"},
+		Photo:   &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
 		Caption: "before",
 	})
 	if err != nil {

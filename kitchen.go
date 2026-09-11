@@ -143,8 +143,22 @@ func (k *Kitchen) Token() string { return k.token }
 
 func (k *Kitchen) Clock() *Clock { return k.clock }
 
-// File returns an upload the bot sent, by the file id the kitchen issued for it.
+// File reads a file back by any id it goes by, each size of a photo included.
 func (k *Kitchen) File(fileID string) (File, bool) { return k.files.get(fileID) }
+
+// Upload holds a file as if it had reached Telegram before the test began, for a
+// bot whose storage already names it by id. kind is the Bot API's word for it.
+func (k *Kitchen) Upload(kind, name string, data []byte) File {
+	if _, known := fileKinds[kind]; !known {
+		names := make([]string, len(mediaKinds))
+		for i, each := range mediaKinds {
+			names[i] = each.param
+		}
+		k.tb.Errorf("kitchen: %q is not a kind of file, want one of %s", kind, strings.Join(names, ", "))
+		return File{}
+	}
+	return k.files.issue(kind, name, data)
+}
 
 func (k *Kitchen) CallbackAnswer(queryID string) (CallbackAnswer, bool) {
 	return k.callbacks.byID(queryID)

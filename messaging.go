@@ -124,7 +124,10 @@ func (k *Kitchen) editMessageMedia(p params) (any, error) {
 		return nil, err
 	}
 
-	file := k.files.fileOf(p.attached(replacement.Media))
+	file, err := k.files.resolve(p.attached(replacement.Media), replacement.Type)
+	if err != nil {
+		return nil, err
+	}
 	return k.applyEdit(p, func(_ *chat, m *models.Message) error {
 		if label, _ := mediaOf(m); label == "" || m.Location != nil {
 			return requestError("there is no media in the message to edit")

@@ -13,9 +13,12 @@ import (
 // send drives one media method the way a bot does, by its own name.
 func sendMedia(t *testing.T, k *Kitchen, chatID int64, method, param string, fields ...string) apiReply {
 	t.Helper()
-	form := map[string]string{"chat_id": strconv.FormatInt(chatID, 10), param: "file-id"}
+	form := map[string]string{"chat_id": strconv.FormatInt(chatID, 10)}
 	for i := 0; i+1 < len(fields); i += 2 {
 		form[fields[i]] = fields[i+1]
+	}
+	if _, given := form[param]; !given {
+		form[param] = k.Upload(param, "", nil).ID
 	}
 	return callForm(t, k, method, form)
 }
@@ -271,7 +274,8 @@ func TestEditedMediaReplacesTheKindItCarried(t *testing.T) {
 	sendMedia(t, k, testChatID, "sendPhoto", "photo", "caption", "before")
 
 	sent := k.History(testChatID)[0]
-	if reply := editMedia(t, k, sent.ID, `{"type":"video","media":"clip","caption":"after"}`); !reply.OK {
+	clip := k.Upload("video", "", nil).ID
+	if reply := editMedia(t, k, sent.ID, `{"type":"video","media":"`+clip+`","caption":"after"}`); !reply.OK {
 		t.Fatalf("edit = %+v, want it served", reply)
 	}
 
@@ -315,11 +319,12 @@ func TestThereHasToBeMediaToEdit(t *testing.T) {
 		t.Fatalf("CopyMessage: %v", err)
 	}
 
+	photo := k.Upload("photo", "", nil).ID
 	for _, m := range k.History(testChatID) {
 		if m.From != "Kitchen" {
 			continue
 		}
-		reply := editMedia(t, k, m.ID, `{"type":"photo","media":"file-id"}`)
+		reply := editMedia(t, k, m.ID, `{"type":"photo","media":"`+photo+`"}`)
 		if reply.OK || !strings.Contains(reply.Description, "no media in the message") {
 			t.Errorf("editing %q = %+v, want it refused", m, reply)
 		}
@@ -328,10 +333,11 @@ func TestThereHasToBeMediaToEdit(t *testing.T) {
 
 func TestEditingMediaToWhatIsAlreadyThereChangesNothing(t *testing.T) {
 	k := New(t)
-	sendMedia(t, k, testChatID, "sendPhoto", "photo")
+	photo := k.Upload("photo", "", nil).ID
+	sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", photo)
 	sent := k.History(testChatID)[0]
 
-	reply := editMedia(t, k, sent.ID, `{"type":"photo","media":"file-id"}`)
+	reply := editMedia(t, k, sent.ID, `{"type":"photo","media":"`+photo+`"}`)
 	if reply.OK || !strings.Contains(reply.Description, "not modified") {
 		t.Errorf("edit = %+v, want the same media refused", reply)
 	}
@@ -367,5 +373,106 @@ func TestEditedMediaTakesAnUploadedFile(t *testing.T) {
 	stored, _ := k.world.latest(testChatID)
 	if f, held := k.files.get(fileIn(&stored)); !held || string(f.Data) != "mp4-bytes" {
 		t.Errorf("file %q = %+v %v, want the bytes that came with the edit", fileIn(&stored), f, held)
+	}
+}
+
+func TestAFileIDHasToBeOneTheBotWasGiven(t *testing.T) {
+	k := New(t)
+	for _, kind := range mediaKinds {
+		reply := sendMedia(t, k, testChatID, kind.method, kind.param, kind.param, "never-issued")
+		if reply.OK || !strings.Contains(reply.Description, "wrong file identifier") {
+			t.Errorf("%s = %+v, want an id nobody issued refused", kind.method, reply)
+		}
+	}
+	photo := k.Upload("photo", "", nil).ID
+	reply := sendAlbum(t, k, `[{"type":"photo","media":"`+photo+`"},{"type":"photo","media":"never-issued"}]`)
+	if reply.OK || !strings.Contains(reply.Description, "wrong file identifier") {
+		t.Errorf("album = %+v, want one unknown id to refuse all of it", reply)
+	}
+	if sent := k.History(testChatID); len(sent) != 0 {
+		t.Fatalf("history = %v, want nothing to have landed", sent)
+	}
+
+	sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", photo)
+	sent := k.History(testChatID)[0]
+	if reply := editMedia(t, k, sent.ID, `{"type":"photo","media":"never-issued"}`); reply.OK {
+		t.Errorf("edit = %+v, want an id nobody issued refused", reply)
+	}
+	if kept := k.History(testChatID)[0].FileID; kept != photo {
+		t.Errorf("file = %q, want the photo left as it was (%q)", kept, photo)
+	}
+}
+
+func TestAFileIsSentAgainOnlyAsWhatItIs(t *testing.T) {
+	k := New(t)
+	photo := k.Upload("photo", "face.jpg", []byte("jpeg")).ID
+	for _, kind := range mediaKinds {
+		if kind.param == "photo" {
+			continue
+		}
+		reply := sendMedia(t, k, testChatID, kind.method, kind.param, kind.param, photo)
+		if reply.OK || !strings.Contains(reply.Description, "type of file mismatch") {
+			t.Errorf("%s with a photo's id = %+v, want it refused", kind.method, reply)
+		}
+	}
+	video := k.Upload("video", "", nil).ID
+	if reply := sendAlbum(t, k, `[{"type":"photo","media":"`+photo+`"},{"type":"photo","media":"`+video+`"}]`); reply.OK {
+		t.Errorf("album = %+v, want a video sent as a photo refused", reply)
+	}
+	if sent := k.History(testChatID); len(sent) != 0 {
+		t.Fatalf("history = %v, want nothing to have landed", sent)
+	}
+
+	if reply := sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", photo); !reply.OK {
+		t.Fatalf("sendPhoto = %+v, want a photo sent as itself served", reply)
+	}
+	sent := k.History(testChatID)[0]
+	reply := editMedia(t, k, sent.ID, `{"type":"document","media":"`+photo+`"}`)
+	if reply.OK || !strings.Contains(reply.Description, "type of file mismatch") {
+		t.Errorf("edit = %+v, want a photo refused as a document", reply)
+	}
+}
+
+// A URL is not an id: Telegram fetches what it points at, and that is a file of its own from then on.
+func TestAFileSentByURLBecomesOneTheBotHolds(t *testing.T) {
+	k := New(t)
+	const address = "https://example.com/face.jpg"
+	if reply := sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", address); !reply.OK {
+		t.Fatalf("sendPhoto by URL = %+v, want it served", reply)
+	}
+
+	fetched := k.History(testChatID)[0].FileID
+	if f, ok := k.File(fetched); !ok || f.Name != address {
+		t.Errorf("file %q = %+v %v, want one named by its address", fetched, f, ok)
+	}
+	if reply := sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", fetched); !reply.OK {
+		t.Errorf("re-send = %+v, want the fetched photo sent again", reply)
+	}
+	if reply := sendMedia(t, k, testChatID, "sendDocument", "document", "document", fetched); reply.OK {
+		t.Errorf("as a document = %+v, want it refused", reply)
+	}
+}
+
+func TestAnUploadIsWhatItWasFirstSentAs(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ctx := context.Background()
+
+	sent, err := b.SendVoice(ctx, &bot.SendVoiceParams{
+		ChatID: testChatID, Voice: &models.InputFileUpload{Filename: "note.ogg", Data: strings.NewReader("ogg")},
+	})
+	if err != nil {
+		t.Fatalf("SendVoice: %v", err)
+	}
+	if _, err := b.SendVoice(ctx, &bot.SendVoiceParams{
+		ChatID: otherChatID, Voice: &models.InputFileString{Data: sent.Voice.FileID},
+	}); err != nil {
+		t.Errorf("re-send as a voice note: %v", err)
+	}
+	_, err = b.SendAudio(ctx, &bot.SendAudioParams{
+		ChatID: otherChatID, Audio: &models.InputFileString{Data: sent.Voice.FileID},
+	})
+	if err == nil || !strings.Contains(err.Error(), "type of file mismatch") {
+		t.Errorf("err = %v, want an uploaded voice note refused as audio", err)
 	}
 }

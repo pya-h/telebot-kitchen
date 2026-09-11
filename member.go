@@ -79,8 +79,6 @@ func (m *Member) tap(screen models.Message, button Button) {
 	}})
 }
 
-// Press pushes a key on the reply keyboard, which reaches the bot as the label
-// sent as plain text — a hard key is a shortcut for typing it.
 func (m *Member) Press(label string) {
 	if !m.HasKey(label) {
 		m.kitchen().tb.Errorf("kitchen: %s has no key %q under the compose box, found: %s", m, label, keyLabels(m.Menu()))
@@ -90,41 +88,41 @@ func (m *Member) Press(label string) {
 }
 
 func (m *Member) SendPhoto(name string, data []byte, caption string) {
-	m.upload(putPhoto, name, data, caption)
+	m.upload("photo", name, data, caption)
 }
 
 func (m *Member) SendVoice(name string, data []byte, caption string) {
-	m.upload(putVoice, name, data, caption)
+	m.upload("voice", name, data, caption)
 }
 
 func (m *Member) SendAudio(name string, data []byte, caption string) {
-	m.upload(putAudio, name, data, caption)
+	m.upload("audio", name, data, caption)
 }
 
 func (m *Member) SendVideo(name string, data []byte, caption string) {
-	m.upload(putVideo, name, data, caption)
+	m.upload("video", name, data, caption)
 }
 
 func (m *Member) SendAnimation(name string, data []byte, caption string) {
-	m.upload(putAnimation, name, data, caption)
+	m.upload("animation", name, data, caption)
 }
 
 func (m *Member) SendDocument(name string, data []byte, caption string) {
-	m.upload(putDocument, name, data, caption)
+	m.upload("document", name, data, caption)
 }
 
 // A sticker and a video note carry no caption, so neither verb takes one.
 func (m *Member) SendSticker(name string, data []byte) {
-	m.upload(putSticker, name, data, "")
+	m.upload("sticker", name, data, "")
 }
 
 func (m *Member) SendVideoNote(name string, data []byte) {
-	m.upload(putVideoNote, name, data, "")
+	m.upload("video_note", name, data, "")
 }
 
-func (m *Member) upload(put func(*models.Message, File), name string, data []byte, caption string) {
+func (m *Member) upload(kind, name string, data []byte, caption string) {
 	sent := models.Message{Caption: caption}
-	put(&sent, m.kitchen().files.add(name, data))
+	fileKinds[kind](&sent, m.kitchen().files.issue(kind, name, data))
 	m.say(sent)
 }
 
@@ -140,16 +138,12 @@ func (m *Member) ShareVenue(latitude, longitude float64, title, address string) 
 	})
 }
 
-// A member sharing a contact is sharing their own, which is what the button
-// asking for one sends back, so the contact names them.
 func (m *Member) ShareContact(phone, firstName, lastName string) {
 	m.say(models.Message{Contact: &models.Contact{
 		PhoneNumber: phone, FirstName: firstName, LastName: lastName, UserID: m.user.id,
 	}})
 }
 
-// RollDice takes the face it landed on rather than picking one, since what the
-// bot does about it is the thing under test.
 func (m *Member) RollDice(emoji string, value int) {
 	faces, rollable := diceFaces[emoji]
 	if !rollable {

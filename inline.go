@@ -11,19 +11,21 @@ import (
 // Telegram takes at most this many results in one answer.
 const mostResults = 50
 
-var inlineKinds = map[string]struct {
-	put     func(*models.Message, File)
+type inlineMedia struct {
+	kind    string
 	cached  string
 	fetched string
-}{
-	"photo":     {putPhoto, "photo_file_id", "photo_url"},
-	"gif":       {putAnimation, "gif_file_id", "gif_url"},
-	"mpeg4_gif": {putAnimation, "mpeg4_file_id", "mpeg4_url"},
-	"video":     {putVideo, "video_file_id", "video_url"},
-	"audio":     {putAudio, "audio_file_id", "audio_url"},
-	"voice":     {putVoice, "voice_file_id", "voice_url"},
-	"document":  {putDocument, "document_file_id", "document_url"},
-	"sticker":   {putSticker, "sticker_file_id", ""},
+}
+
+var inlineKinds = map[string]inlineMedia{
+	"photo":     {"photo", "photo_file_id", "photo_url"},
+	"gif":       {"animation", "gif_file_id", "gif_url"},
+	"mpeg4_gif": {"animation", "mpeg4_file_id", "mpeg4_url"},
+	"video":     {"video", "video_file_id", "video_url"},
+	"audio":     {"audio", "audio_file_id", "audio_url"},
+	"voice":     {"voice", "voice_file_id", "voice_url"},
+	"document":  {"document", "document_file_id", "document_url"},
+	"sticker":   {"sticker", "sticker_file_id", ""},
 }
 
 // inlineResult is a result as it arrives on the wire. The library models these
@@ -188,12 +190,12 @@ func (k *Kitchen) becomes(result inlineResult, fields map[string]any) (models.Me
 		return msg, nil
 	}
 
-	if kind, media := inlineKinds[result.Type]; media {
-		file, named := k.fileNamed(fields, kind.cached, kind.fetched)
-		if !named {
-			return models.Message{}, badRequest(result.Type)
+	if media, ok := inlineKinds[result.Type]; ok {
+		file, err := k.fileNamed(fields, result.Type, media)
+		if err != nil {
+			return models.Message{}, err
 		}
-		kind.put(&msg, file)
+		fileKinds[media.kind](&msg, file)
 		msg.Caption = result.Caption
 		return msg, nil
 	}
@@ -214,14 +216,14 @@ func (k *Kitchen) becomes(result inlineResult, fields map[string]any) (models.Me
 	return msg, nil
 }
 
-func (k *Kitchen) fileNamed(fields map[string]any, cached, fetched string) (File, bool) {
-	if id, ok := fields[cached].(string); ok && id != "" {
-		return k.files.fileOf(id), true
+func (k *Kitchen) fileNamed(fields map[string]any, resultType string, media inlineMedia) (File, error) {
+	if id, ok := fields[media.cached].(string); ok && id != "" {
+		return k.files.named(id, media.kind)
 	}
-	if url, ok := fields[fetched].(string); ok && url != "" {
-		return k.files.add(url, nil), true
+	if url, ok := fields[media.fetched].(string); ok && url != "" {
+		return k.files.issue(media.kind, url, nil), nil
 	}
-	return File{}, false
+	return File{}, badRequest(resultType)
 }
 
 // Search types the bot's name and a query into the compose box, which reaches

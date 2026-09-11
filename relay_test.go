@@ -167,7 +167,7 @@ func TestCopyReplacesACaption(t *testing.T) {
 
 	photo, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID:  testChatID,
-		Photo:   &models.InputFileString{Data: "file-1"},
+		Photo:   &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
 		Caption: "before",
 	})
 	if err != nil {

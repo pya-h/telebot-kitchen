@@ -38,6 +38,48 @@ func concierge(t *testing.T, k *Kitchen, b *bot.Bot) bot.HandlerFunc {
 	}
 }
 
+// A recorded file is one the bot was given, under every id Telegram gave it. A
+// thumbnail never was: Telegram resends none.
+func TestAReplayedFileCanBeSentAgain(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ada := models.User{ID: 7, FirstName: "Ada"}
+	chat := models.Chat{ID: 7, Type: models.ChatTypePrivate}
+
+	var tape strings.Builder
+	for _, m := range []models.Message{
+		{ID: 1, Date: 1700000000, Chat: chat, From: &ada, Photo: []models.PhotoSize{
+			{FileID: "AgAD-small", FileUniqueID: "AQAD-small", Width: 90, Height: 90},
+			{FileID: "AgAD-large", FileUniqueID: "AQAD-large", Width: 1280, Height: 1280},
+		}},
+		{ID: 2, Date: 1700000001, Chat: chat, From: &ada, Document: &models.Document{
+			FileID: "BQAD-doc", FileUniqueID: "AgAD-doc", Thumbnail: &models.PhotoSize{FileID: "AAMC-thumb"},
+		}},
+	} {
+		line, err := json.Marshal(models.Update{Message: &m})
+		if err != nil {
+			t.Fatalf("encode: %v", err)
+		}
+		tape.Write(line)
+		tape.WriteByte('\n')
+	}
+	k.ReplayFrom(strings.NewReader(tape.String()))
+
+	for _, again := range []struct{ method, param, id string }{
+		{"sendPhoto", "photo", "AgAD-small"},
+		{"sendPhoto", "photo", "AgAD-large"},
+		{"sendDocument", "document", "BQAD-doc"},
+	} {
+		if reply := sendMedia(t, k, chat.ID, again.method, again.param, again.param, again.id); !reply.OK {
+			t.Errorf("%s %s = %+v, want the recorded file sent again", again.method, again.id, reply)
+		}
+	}
+	reply := sendMedia(t, k, chat.ID, "sendPhoto", "photo", "photo", "AAMC-thumb")
+	if reply.OK || !strings.Contains(reply.Description, "wrong file identifier") {
+		t.Errorf("a thumbnail = %+v, want it refused", reply)
+	}
+}
+
 func record(t *testing.T, path string) {
 	t.Helper()
 	tape, err := capture.To(path)

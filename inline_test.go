@@ -163,6 +163,25 @@ func TestAPickedResultCarriesItsMediaAndKeyboard(t *testing.T) {
 	}
 }
 
+func TestACachedResultNamesAFileTheBotHolds(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	var err error
+	k.DeliverTo(func(ctx context.Context, u *models.Update) {
+		_, err = b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+			InlineQueryID: u.InlineQuery.ID,
+			Results: []models.InlineQueryResult{
+				&models.InlineQueryResultCachedPhoto{ID: "lunch", PhotoFileID: "never-issued"},
+			},
+		})
+	})
+
+	k.User(7).Search("lunch")
+	if err == nil || !strings.Contains(err.Error(), "wrong file identifier") {
+		t.Errorf("err = %v, want a result naming a file nobody issued refused", err)
+	}
+}
+
 func TestAResultTelegramWouldNotTake(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
@@ -274,8 +293,6 @@ func TestTooManyResults(t *testing.T) {
 	}
 }
 
-// Query ids are text, and text puts "query-9" after "query-10", so the newest
-// search has to be tracked by when it was asked rather than by its id.
 func TestPickTakesTheNewestSearchPastTheNinth(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)

@@ -148,6 +148,22 @@ it stays the same one — which is what a relay does. `copyMessage` carries any 
 these across while stripping who sent it, so a two-way relay stays anonymous
 without the bot doing anything about it.
 
+The id has to be one the bot was given, sent as what it is, because Telegram
+never changes a file's kind: an id nobody issued is `wrong file identifier/HTTP
+URL specified`, and a photo sent as a document is `type of file mismatch`. An
+upload is whatever the first message carrying it is. A URL is not an id —
+Telegram fetches what it points at, so the kitchen holds a new file named by the
+address. A bot whose storage already names a file by id needs that file to exist
+before the test starts:
+
+```go
+face := k.Upload("photo", "face.jpg", jpeg) // the kinds are the Bot API's words
+```
+
+Each size of a photo has an id of its own, and the largest is the one
+`Message.FileID` names. Every size reads back through `k.File`, and re-sending
+any of them sends the whole photo again, all sizes, as Telegram does.
+
 `editMessageMedia` swaps what a message carries, kind and all — a photo becomes
 a video, and the old one goes rather than sitting alongside it. Telegram edits
 five of the eight in, so a sticker, a voice note and a video note are refused,
@@ -272,9 +288,9 @@ modelled; edit it by its message id like any other.
 What a result becomes follows Telegram: `input_message_content` when there is
 one — text, a location, a venue or a contact — otherwise the media the result
 names, otherwise the result's own location, venue or contact, and failing all
-that its title. A cached result carries the file the bot already had, so
-`k.File` reads the same bytes back; one given by URL has no bytes to carry, and
-the kitchen keeps it by its address instead.
+that its title. A cached result has to name a file the bot holds, of the
+result's kind, and `k.File` reads the same bytes back; one given by URL has no
+bytes to carry, and the kitchen names it by its address instead.
 
 ### Asking to join, and boosts
 
@@ -756,6 +772,10 @@ answered about somebody who only speaks later, and an edit lands where it landed
 in production. Messages the recorded bot sent come back as this kitchen's bot,
 so they read as its own. `ReplayFrom(r)` does the same for a recording that is
 not a file.
+
+Every file a seated message carries is held under the ids Telegram gave it, each
+size of a photo included, so the bot can send it again by the id it stored. A
+thumbnail is not, since Telegram never resends one.
 
 **The bot does its work again.** Replaying the update that made it greet
 somebody makes it greet them again, and that greeting joins the one the
