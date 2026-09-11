@@ -23,6 +23,26 @@ func (m *Member) HasKey(label string) bool {
 	return false
 }
 
+// Bytes, not characters: a Persian letter costs two.
+const mostCallbackData = 64
+
+type buttonData struct {
+	InlineKeyboard [][]struct {
+		CallbackData *string `json:"callback_data"`
+	} `json:"inline_keyboard"`
+}
+
+func (b buttonData) check() error {
+	for _, row := range b.InlineKeyboard {
+		for _, button := range row {
+			if data := button.CallbackData; data != nil && (*data == "" || len(*data) > mostCallbackData) {
+				return requestError("BUTTON_DATA_INVALID")
+			}
+		}
+	}
+	return nil
+}
+
 func buttonsOf(markup *models.InlineKeyboardMarkup) [][]Button {
 	if markup == nil {
 		return nil

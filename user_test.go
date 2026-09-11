@@ -113,6 +113,52 @@ func TestUserOptionsAreAdditive(t *testing.T) {
 	}
 }
 
+func TestTheBotCannotWriteFirst(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ctx := context.Background()
+	send := func(chatID int64) error {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "hello"})
+		return err
+	}
+
+	ada := k.User(7)
+	if err := send(ada.ID()); err == nil || !strings.Contains(err.Error(), "bot can't initiate conversation with a user") {
+		t.Errorf("to a user who never wrote: err = %v, want it forbidden", err)
+	}
+
+	team := k.Group(-42, "Standup")
+	ada.In(team).Send("hi all")
+	if err := send(team.ID()); err != nil {
+		t.Errorf("to the group: %v", err)
+	}
+	if err := send(ada.ID()); err == nil {
+		t.Error("after speaking only in a group: sent, want it still forbidden")
+	}
+
+	ada.SendCommand("start")
+	if err := send(ada.ID()); err != nil {
+		t.Errorf("after /start: %v", err)
+	}
+	if err := send(k.User(8, Started()).ID()); err != nil {
+		t.Errorf("to a user who started it before the test: %v", err)
+	}
+	if err := send(424242); err == nil || !strings.Contains(err.Error(), "chat not found") {
+		t.Errorf("to nobody the kitchen knows: err = %v, want chat not found", err)
+	}
+
+	grace := k.User(9)
+	if _, err := b.CopyMessage(ctx, &bot.CopyMessageParams{
+		ChatID: grace.ID(), FromChatID: ada.ID(), MessageID: ada.Screen().ID,
+	}); err == nil {
+		t.Error("a copy to a user who never wrote was sent, want it forbidden")
+	}
+	if _, err := b.SendChatAction(ctx, &bot.SendChatActionParams{ChatID: grace.ID(), Action: models.ChatActionTyping}); err == nil {
+		t.Error("a chat action to a user who never wrote was sent, want it forbidden")
+	}
+}
+
 func syncBot(t *testing.T, k *Kitchen, handler bot.HandlerFunc) *bot.Bot {
 	t.Helper()
 	b, err := bot.New(k.Token(), bot.WithServerURL(k.APIURL()),

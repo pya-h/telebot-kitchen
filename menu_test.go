@@ -27,7 +27,7 @@ func raise(t *testing.T, b *bot.Bot, chatID int64, text string, markup any) {
 func TestAMenuOutlivesTheMessageThatRaisedIt(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	raise(t, b, ada.ChatID(), "searching…", nil)
@@ -41,7 +41,7 @@ func TestAMenuOutlivesTheMessageThatRaisedIt(t *testing.T) {
 func TestAMenuIsReplacedByTheNextOne(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	raise(t, b, ada.ChatID(), "in chat", &models.ReplyKeyboardMarkup{
@@ -56,7 +56,7 @@ func TestAMenuIsReplacedByTheNextOne(t *testing.T) {
 func TestRemovingTheMenuTakesEveryKey(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	raise(t, b, ada.ChatID(), "gone", &models.ReplyKeyboardRemove{RemoveKeyboard: true})
@@ -70,7 +70,7 @@ func TestRemovingTheMenuTakesEveryKey(t *testing.T) {
 func TestAMenuIsNotAnInlineKeyboard(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	if buttons := ada.Screen().Buttons(); len(buttons) != 0 {
@@ -88,7 +88,7 @@ func TestPressingAKeySendsItsLabel(t *testing.T) {
 	b := newClient(t, k)
 	var got *models.Message
 	k.DeliverTo(func(_ context.Context, u *models.Update) { got = u.Message })
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	ada.Press("Search")
@@ -105,7 +105,7 @@ func TestPressingAKeyThatIsNotThereFails(t *testing.T) {
 	k := New(tb)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	raise(t, b, ada.ChatID(), "menu", mainMenu)
 	ada.Press("Settings")

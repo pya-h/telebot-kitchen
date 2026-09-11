@@ -12,7 +12,7 @@ import (
 const otherChatID = testChatID + 1
 
 func TestForwardCarriesItsOrigin(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
@@ -38,7 +38,7 @@ func TestForwardCarriesItsOrigin(t *testing.T) {
 }
 
 func TestForwardDropsTheKeyboard(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	menu, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
@@ -64,11 +64,12 @@ func TestForwardDropsTheKeyboard(t *testing.T) {
 }
 
 func TestReForwardKeepsTheFirstSender(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	ada := k.User(testChatID, WithFullName("Ada", "Lovelace"))
+	k.User(otherChatID+1, Started())
 	ada.Send("hello")
 
 	once, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
@@ -90,11 +91,12 @@ func TestReForwardKeepsTheFirstSender(t *testing.T) {
 }
 
 func TestCopyArrivesWithoutAttribution(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	ada := k.User(testChatID, WithFullName("Ada", "Lovelace"))
+	k.User(otherChatID+1, Started())
 	ada.Send("hello")
 
 	forwarded, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
@@ -124,7 +126,7 @@ func TestCopyArrivesWithoutAttribution(t *testing.T) {
 }
 
 func TestCopyTakesTheKeyboardItIsGiven(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	menu, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
@@ -162,7 +164,7 @@ func TestCopyTakesTheKeyboardItIsGiven(t *testing.T) {
 }
 
 func TestCopyReplacesACaption(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	photo, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
@@ -202,7 +204,7 @@ func TestRelayingAMissingMessageIsRefused(t *testing.T) {
 // A → bot → B, the whole point of a relay: what B sees, and that A's own chat
 // is left alone.
 func TestARelayReachesTheOtherUser(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	k.DeliverTo(syncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
 		b.ForwardMessage(ctx, &bot.ForwardMessageParams{
 			ChatID:     otherChatID,
@@ -225,7 +227,7 @@ func TestARelayReachesTheOtherUser(t *testing.T) {
 }
 
 func TestAForwardedPostNamesTheChannelItCameFrom(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 

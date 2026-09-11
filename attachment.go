@@ -48,26 +48,23 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 	if file == "" {
 		return nil, badRequest(kind.param)
 	}
-	// Read before accept, so markup the kitchen cannot read leaves the keyboard
-	// already up alone.
-	caption, entities, err := p.styled("caption", "caption_entities")
-	if err != nil {
-		return nil, err
-	}
 	held, err := k.files.resolve(file, kind.param)
-	if err != nil {
-		return nil, err
-	}
-	markup, err := k.accept(p, chatID)
 	if err != nil {
 		return nil, err
 	}
 
 	sender := k.botUser()
-	sent := models.Message{From: &sender, ReplyMarkup: markup}
+	sent := models.Message{From: &sender}
 	kind.put(&sent, held)
+	// A kind without a caption ignores the field, as Telegram does. Read before
+	// accept, so markup the kitchen cannot read leaves the keyboard already up alone.
 	if _, captioned := mediaOf(&sent); captioned {
-		sent.Caption, sent.CaptionEntities = caption, entities
+		if sent.Caption, sent.CaptionEntities, err = p.caption(); err != nil {
+			return nil, err
+		}
+	}
+	if sent.ReplyMarkup, err = k.accept(p, chatID); err != nil {
+		return nil, err
 	}
 	return k.world.add(chatID, sent), nil
 }

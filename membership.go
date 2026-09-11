@@ -3,32 +3,41 @@ package kitchen
 import (
 	"slices"
 	"sync"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 )
+
+// How long the bot may write to somebody whose join request it has not answered.
+const knockWindow = 5 * time.Minute
+
+type joinRequest struct {
+	who models.User
+	at  time.Time
+}
 
 // joinBook holds the requests waiting on an answer. A request is not a
 // standing: somebody asking to join is not in the chat until they are let in.
 type joinBook struct {
 	mu     sync.Mutex
-	asking map[int64]map[int64]models.User
+	asking map[int64]map[int64]joinRequest
 }
 
-func newJoinBook() *joinBook { return &joinBook{asking: map[int64]map[int64]models.User{}} }
+func newJoinBook() *joinBook { return &joinBook{asking: map[int64]map[int64]joinRequest{}} }
 
-func (b *joinBook) ask(chatID int64, who models.User) bool {
+func (b *joinBook) ask(chatID int64, who models.User, at time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	waiting, ok := b.asking[chatID]
 	if !ok {
-		waiting = map[int64]models.User{}
+		waiting = map[int64]joinRequest{}
 		b.asking[chatID] = waiting
 	}
 	if _, already := waiting[who.ID]; already {
 		return false
 	}
-	waiting[who.ID] = who
+	waiting[who.ID] = joinRequest{who: who, at: at}
 	return true
 }
 
@@ -37,11 +46,23 @@ func (b *joinBook) answer(chatID, userID int64) (models.User, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	who, waiting := b.asking[chatID][userID]
+	asked, waiting := b.asking[chatID][userID]
 	if waiting {
 		delete(b.asking[chatID], userID)
 	}
-	return who, waiting
+	return asked.who, waiting
+}
+
+func (b *joinBook) knocking(userID int64, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, waiting := range b.asking {
+		if asked, ok := waiting[userID]; ok && now.Before(asked.at.Add(knockWindow)) {
+			return true
+		}
+	}
+	return false
 }
 
 // The calls a bot makes before it acts, answered from the roster.
@@ -140,15 +161,11 @@ func (k *Kitchen) restrictChatMember(p params) (any, error) {
 		return nil, badRequest("permissions")
 	}
 	return k.manage(p, RestrictMembers, "restrict a chat member", func(s *standing) {
-		// Restricting somebody who is not in the chat waits for them rather than
-		// putting them back, so read presence before the status is overwritten.
 		s.absent = !s.present()
 		s.status, s.silenced = models.ChatMemberTypeRestricted, !allowed.CanSendMessages
 	})
 }
 
-// Promoting with nothing granted is how Telegram spells a demotion, so the
-// rights the kitchen only reports still have to count towards the status.
 func (k *Kitchen) promoteChatMember(p params) (any, error) {
 	granted := rightsIn(p)
 	demoted := len(granted) == 0 && !slices.ContainsFunc(reportedRights, p.flag)
@@ -175,8 +192,6 @@ func (k *Kitchen) manage(p params, need Right, what string, apply func(*standing
 	return true, nil
 }
 
-// Letting somebody in is the bot's own doing, so the chat_member update it
-// makes names the bot as what changed them, not the member.
 func (k *Kitchen) approveChatJoinRequest(p params) (any, error) {
 	return k.answerJoinRequest(p, true)
 }

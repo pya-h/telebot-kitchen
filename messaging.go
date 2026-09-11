@@ -14,12 +14,9 @@ func (k *Kitchen) sendMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, entities, err := p.styled("text", "entities")
+	text, entities, err := p.text()
 	if err != nil {
 		return nil, err
-	}
-	if text == "" {
-		return nil, requestError("message text is empty")
 	}
 	markup, err := k.accept(p, chatID)
 	if err != nil {
@@ -44,7 +41,7 @@ func (k *Kitchen) accept(p params, chatID int64) (*models.InlineKeyboardMarkup, 
 	if err != nil {
 		return nil, err
 	}
-	if err := k.world.mayPost(chatID); err != nil {
+	if err := k.mayPost(chatID); err != nil {
 		return nil, err
 	}
 	if changed {
@@ -54,12 +51,9 @@ func (k *Kitchen) accept(p params, chatID int64) (*models.InlineKeyboardMarkup, 
 }
 
 func (k *Kitchen) editMessageText(p params) (any, error) {
-	text, entities, err := p.styled("text", "entities")
+	text, entities, err := p.text()
 	if err != nil {
 		return nil, err
-	}
-	if text == "" {
-		return nil, requestError("message text is empty")
 	}
 	markup, err := p.markup()
 	if err != nil {
@@ -79,7 +73,7 @@ func (k *Kitchen) editMessageText(p params) (any, error) {
 }
 
 func (k *Kitchen) editMessageCaption(p params) (any, error) {
-	caption, entities, err := p.styled("caption", "caption_entities")
+	caption, entities, err := p.caption()
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +109,7 @@ func (k *Kitchen) editMessageMedia(p params) (any, error) {
 	if !editable {
 		return nil, requestError("type of the media to edit is not supported")
 	}
-	caption, entities, err := styledText(replacement.Caption, replacement.ParseMode, replacement.CaptionEntities)
+	caption, entities, err := fitCaption(styledText(replacement.Caption, replacement.ParseMode, replacement.CaptionEntities))
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +166,7 @@ func (k *Kitchen) sendChatAction(p params) (any, error) {
 	if !slices.Contains(chatActions, p["action"]) {
 		return nil, requestError("wrong parameter action in request")
 	}
-	if err := k.world.mayPost(chatID); err != nil {
+	if err := k.mayPost(chatID); err != nil {
 		return nil, err
 	}
 	return true, nil
@@ -197,10 +191,15 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 	return true, nil
 }
 
+const mostAnswer = 200
+
 func (k *Kitchen) answerCallbackQuery(p params) (any, error) {
 	queryID := p["callback_query_id"]
 	if queryID == "" {
 		return nil, badRequest("callback_query_id")
+	}
+	if utf16Len(p["text"]) > mostAnswer {
+		return nil, requestError("text of the answer is too long")
 	}
 
 	k.callbacks.record(CallbackAnswer{

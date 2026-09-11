@@ -8,10 +8,13 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-type UserOption func(*Identity)
+type UserOption func(*userSetup)
 
-// Identity is who a virtual person is to Telegram. Their id is not on it: it is
-// the key they are registered under, and an option must not be able to move it.
+type userSetup struct {
+	Identity
+	started bool
+}
+
 type Identity struct {
 	Username     string
 	FirstName    string
@@ -20,19 +23,22 @@ type Identity struct {
 }
 
 func WithUsername(username string) UserOption {
-	return func(i *Identity) { i.Username = username }
+	return func(s *userSetup) { s.Username = username }
 }
 
 func WithFullName(first, last string) UserOption {
-	return func(i *Identity) { i.FirstName, i.LastName = first, last }
+	return func(s *userSetup) { s.FirstName, s.LastName = first, last }
 }
 
 func WithLanguage(code string) UserOption {
-	return func(i *Identity) { i.LanguageCode = code }
+	return func(s *userSetup) { s.LanguageCode = code }
 }
 
-// User is a virtual person talking to the bot through the kitchen. The embedded
-// member is their private chat, so the plain verbs still mean what they did.
+// Started is a user who opened the bot's private chat before the test began.
+func Started() UserOption {
+	return func(s *userSetup) { s.started = true }
+}
+
 type User struct {
 	*Member
 
@@ -63,10 +69,15 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 		u.Member = &Member{user: u, chat: &Chat{kitchen: k, id: id, kind: models.ChatTypePrivate}}
 		k.users[id] = u
 	}
+	setup := userSetup{Identity: u.info}
 	for _, opt := range opts {
-		opt(&u.info)
+		opt(&setup)
 	}
+	u.info = setup.Identity
 	k.world.join(id, u.telegram())
+	if setup.started {
+		k.world.start(id)
+	}
 	return u
 }
 
@@ -116,8 +127,6 @@ func (u *User) telegram() models.User {
 	}
 }
 
-// Telegram parses entities itself, so a message opening with a command carries
-// one whether the user typed the text or asked for the command by name.
 func commandEntities(text string) []models.MessageEntity {
 	if !strings.HasPrefix(text, "/") {
 		return nil

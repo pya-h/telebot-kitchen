@@ -25,7 +25,7 @@ func kinds(entities []Entity) []string {
 func TestTheMarkupComesOffTheTextATestAssertsOn(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	sent, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID:    ada.ID(),
@@ -48,7 +48,7 @@ func TestTheMarkupComesOffTheTextATestAssertsOn(t *testing.T) {
 func TestTheSpansAreThereToAssertOn(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID:    ada.ID(),
@@ -66,7 +66,7 @@ func TestTheSpansAreThereToAssertOn(t *testing.T) {
 func TestATranscriptShowsTheMarkupAClientShows(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID:    ada.ID(),
@@ -145,7 +145,7 @@ func TestMarkupTheKitchenCannotReadIsRefused(t *testing.T) {
 func TestEntitiesGivenOutrightWinOverAParseMode(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID:    ada.ID(),
@@ -166,7 +166,7 @@ func TestEntitiesGivenOutrightWinOverAParseMode(t *testing.T) {
 func TestACaptionIsStyledLikeText(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	_, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
 		ChatID:    ada.ID(),
@@ -197,7 +197,7 @@ func TestACaptionIsStyledLikeText(t *testing.T) {
 func TestAnEditThatOnlyRestylesIsStillAnEdit(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	sent, _ := b.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: ada.ID(), Text: "steady"})
 	edited, err := b.EditMessageText(context.Background(), &bot.EditMessageTextParams{
@@ -217,7 +217,7 @@ func TestAnEditThatOnlyRestylesIsStillAnEdit(t *testing.T) {
 func TestASpanThatIsNotThereIsIgnored(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: ada.ID(),
@@ -244,7 +244,7 @@ func TestASpanThatIsNotThereIsIgnored(t *testing.T) {
 func TestEachCaptionInAnAlbumIsReadOnItsOwn(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	_, err := b.SendMediaGroup(context.Background(), &bot.SendMediaGroupParams{
 		ChatID: ada.ID(),
@@ -309,7 +309,7 @@ func TestALinkTargetLosesItsHTMLEscapes(t *testing.T) {
 func TestAMatcherReadsACallTheWayItReadsTheMessage(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: ada.ID(), ParseMode: models.ParseModeMarkdown,
@@ -326,5 +326,92 @@ func TestAMatcherReadsACallTheWayItReadsTheMessage(t *testing.T) {
 	// The spelling itself is still there for a test that wants it.
 	if !k.Calls().Has(Param("text", `Welcome, *Ada*\!`)) {
 		t.Error("the raw text parameter is gone from the record")
+	}
+}
+
+func TestTextIsMeasuredOnceTheMarkupIsOff(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ctx := context.Background()
+	ada := k.User(7, Started())
+
+	for _, c := range []struct {
+		name, text string
+		mode       models.ParseMode
+		fits       bool
+	}{
+		{"at the limit", strings.Repeat("a", mostText), "", true},
+		{"one over", strings.Repeat("a", mostText+1), "", false},
+		{"in Persian, two bytes a letter", strings.Repeat("س", mostText), "", true},
+		{"longer only in its markup", "*" + strings.Repeat("a", mostText) + "*", models.ParseModeMarkdown, true},
+		{"in emoji, two UTF-16 units each", strings.Repeat("🎉", mostText/2+1), "", false},
+	} {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: c.text, ParseMode: c.mode})
+		if fits := err == nil; fits != c.fits {
+			t.Errorf("%s: err = %v, want it to fit: %v", c.name, err, c.fits)
+		}
+		if err != nil && !strings.Contains(err.Error(), "message is too long") {
+			t.Errorf("%s: err = %v, want Telegram's refusal", c.name, err)
+		}
+	}
+
+	_, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID: ada.ID(), MessageID: ada.Screen().ID, Text: strings.Repeat("a", mostText+1),
+	})
+	if err == nil || !strings.Contains(err.Error(), "message is too long") {
+		t.Errorf("edit: err = %v, want text over the limit refused", err)
+	}
+}
+
+func TestACaptionHoldsLessThanText(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ctx := context.Background()
+	ada := k.User(7, Started())
+	over := strings.Repeat("a", mostCaption+1)
+	refused := func(what string, err error) {
+		t.Helper()
+		if err == nil || !strings.Contains(err.Error(), "message caption is too long") {
+			t.Errorf("%s: err = %v, want the caption refused", what, err)
+		}
+	}
+
+	sent, err := b.SendPhoto(ctx, &bot.SendPhotoParams{
+		ChatID: ada.ID(), Photo: &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
+		Caption: strings.Repeat("a", mostCaption),
+	})
+	if err != nil {
+		t.Fatalf("a caption at the limit: %v", err)
+	}
+
+	_, err = b.SendPhoto(ctx, &bot.SendPhotoParams{
+		ChatID: ada.ID(), Photo: &models.InputFileString{Data: k.Upload("photo", "", nil).ID}, Caption: over,
+	})
+	refused("sendPhoto", err)
+	_, err = b.SendMediaGroup(ctx, &bot.SendMediaGroupParams{ChatID: ada.ID(), Media: []models.InputMedia{
+		&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID},
+		&models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: over},
+	}})
+	refused("an album item", err)
+	_, err = b.EditMessageCaption(ctx, &bot.EditMessageCaptionParams{ChatID: ada.ID(), MessageID: sent.ID, Caption: over})
+	refused("editMessageCaption", err)
+	_, err = b.EditMessageMedia(ctx, &bot.EditMessageMediaParams{
+		ChatID: ada.ID(), MessageID: sent.ID,
+		Media: &models.InputMediaPhoto{Media: k.Upload("photo", "", nil).ID, Caption: over},
+	})
+	refused("editMessageMedia", err)
+	_, err = b.CopyMessage(ctx, &bot.CopyMessageParams{ChatID: ada.ID(), FromChatID: ada.ID(), MessageID: sent.ID, Caption: over})
+	refused("copyMessage", err)
+
+	if log := ada.History(); len(log) != 1 {
+		t.Errorf("history = %v, want only the photo whose caption fit", log)
+	}
+
+	// sendSticker has no caption, so one sent anyway is not Telegram's to measure.
+	sticker := callForm(t, k, "sendSticker", map[string]string{
+		"chat_id": "7", "sticker": k.Upload("sticker", "", nil).ID, "caption": over,
+	})
+	if !sticker.OK {
+		t.Errorf("a sticker with a long caption = %+v, want the caption ignored", sticker)
 	}
 }

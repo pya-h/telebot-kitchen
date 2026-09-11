@@ -72,7 +72,7 @@ func TestUploadReadsBackAsFileID(t *testing.T) {
 
 // Telegram resends a photo with all of its sizes, whichever size's id it was given.
 func TestEachPhotoSizeIsAnIDForTheWholePhoto(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 	k.User(7).SendPhoto("face.jpg", []byte("jpeg"), "")

@@ -18,7 +18,7 @@ func sendAlbum(t *testing.T, k *Kitchen, media string) apiReply {
 }
 
 func TestAnAlbumIsSeveralMessagesUnderOneGroup(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	reply := sendAlbum(t, k, `[
 		{"type":"photo","media":"`+k.Upload("photo", "", nil).ID+`","caption":"the pair"},
 		{"type":"video","media":"`+k.Upload("video", "", nil).ID+`"}
@@ -41,7 +41,7 @@ func TestAnAlbumIsSeveralMessagesUnderOneGroup(t *testing.T) {
 
 // Two albums in a chat are two groups, or a bot reading by group would read both as one.
 func TestTwoAlbumsAreTwoGroups(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	one, two := k.Upload("photo", "", nil).ID, k.Upload("photo", "", nil).ID
 	pair := `[{"type":"photo","media":"` + one + `"},{"type":"photo","media":"` + two + `"}]`
 	sendAlbum(t, k, pair)
@@ -68,7 +68,7 @@ func TestAnAlbumIsBetweenTwoAndTenFiles(t *testing.T) {
 }
 
 func TestOnlySomeKindsTravelTogether(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	for group, want := range map[string]string{
 		`[{"type":"document","media":"a"},{"type":"photo","media":"b"}]`:  "document must be the only kind",
 		`[{"type":"audio","media":"a"},{"type":"video","media":"b"}]`:     "audio must be the only kind",
@@ -170,7 +170,7 @@ func TestAMemberIsToldWhenAnAlbumCannotTravel(t *testing.T) {
 
 // The library builds the group the way a real bot does, uploads and all.
 func TestAnAlbumBuiltByTheLibraryArrives(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sent, err := b.SendMediaGroup(context.Background(), &bot.SendMediaGroupParams{

@@ -28,7 +28,7 @@ func sendMedia(t *testing.T, k *Kitchen, chatID int64, method, param string, fie
 func TestEverySendKindArrivesAsItself(t *testing.T) {
 	for _, kind := range mediaKinds {
 		t.Run(kind.method, func(t *testing.T) {
-			k := New(t)
+			k := talking(t)
 			if reply := sendMedia(t, k, testChatID, kind.method, kind.param); !reply.OK {
 				t.Fatalf("%s = %+v, want it served", kind.method, reply)
 			}
@@ -68,7 +68,7 @@ func TestAStickerAndAVideoNoteCarryNoCaption(t *testing.T) {
 }
 
 func TestACaptionIsEditableOnlyWhereTelegramAllowsOne(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sendMedia(t, k, testChatID, "sendVoice", "voice", "caption", "first")
@@ -93,7 +93,7 @@ func TestACaptionIsEditableOnlyWhereTelegramAllowsOne(t *testing.T) {
 }
 
 func TestTextIsNotEditableOnAnythingCarryingMedia(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sendMedia(t, k, testChatID, "sendVideo", "video")
@@ -108,7 +108,7 @@ func TestTextIsNotEditableOnAnythingCarryingMedia(t *testing.T) {
 // The relay the kitchen exists for: a voice note reaching the other side with
 // nothing of the sender left on it.
 func TestAVoiceNoteRelaysWithoutItsSender(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := syncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
 		b.CopyMessage(ctx, &bot.CopyMessageParams{
 			ChatID: otherChatID, FromChatID: u.Message.Chat.ID, MessageID: u.Message.ID,
@@ -168,7 +168,7 @@ func TestMediaAMemberSendsIsReadableBack(t *testing.T) {
 // A bot re-sending a file id it was given never uploaded anything, so the id
 // has to stay addressable on the way back out.
 func TestAResentFileIDStaysTheSameFile(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	var sent *models.Message
 	k.DeliverTo(func(_ context.Context, u *models.Update) { sent = u.Message })
 	k.User(7).SendVoice("note.ogg", []byte("ogg"), "")
@@ -196,7 +196,7 @@ func TestAReceivedMessageNamesItsFile(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada, bob := k.User(7), k.User(8)
+	ada, bob := k.User(7), k.User(8, Started())
 
 	ada.SendVoice("note.ogg", []byte("ogg"), "listen")
 	sent := ada.History()[0]
@@ -223,7 +223,7 @@ func TestAReceivedMessageNamesItsFile(t *testing.T) {
 
 // A copy may reword what it carries, but only where the kind takes a caption.
 func TestACopyMayReplaceTheCaptionOnMedia(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	sendMedia(t, k, testChatID, "sendVoice", "voice", "caption", "first")
 	sendMedia(t, k, testChatID, "sendSticker", "sticker")
@@ -270,7 +270,7 @@ func editMedia(t *testing.T, k *Kitchen, messageID int, media string) apiReply {
 }
 
 func TestEditedMediaReplacesTheKindItCarried(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	sendMedia(t, k, testChatID, "sendPhoto", "photo", "caption", "before")
 
 	sent := k.History(testChatID)[0]
@@ -287,7 +287,7 @@ func TestEditedMediaReplacesTheKindItCarried(t *testing.T) {
 }
 
 func TestOnlyTheKindsTelegramCanEditIn(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	sendMedia(t, k, testChatID, "sendPhoto", "photo")
 	sent := k.History(testChatID)[0]
 
@@ -302,7 +302,7 @@ func TestOnlyTheKindsTelegramCanEditIn(t *testing.T) {
 // A location reads like media in a transcript without being any, and a copy is
 // how one ends up in a message the bot owns and could otherwise edit.
 func TestThereHasToBeMediaToEdit(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
@@ -332,7 +332,7 @@ func TestThereHasToBeMediaToEdit(t *testing.T) {
 }
 
 func TestEditingMediaToWhatIsAlreadyThereChangesNothing(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	photo := k.Upload("photo", "", nil).ID
 	sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", photo)
 	sent := k.History(testChatID)[0]
@@ -346,7 +346,7 @@ func TestEditingMediaToWhatIsAlreadyThereChangesNothing(t *testing.T) {
 // A file uploaded with the edit arrives under a field of its own, which the
 // media parameter points at instead of carrying.
 func TestEditedMediaTakesAnUploadedFile(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	sendMedia(t, k, testChatID, "sendPhoto", "photo")
 	sent := k.History(testChatID)[0]
@@ -377,7 +377,7 @@ func TestEditedMediaTakesAnUploadedFile(t *testing.T) {
 }
 
 func TestAFileIDHasToBeOneTheBotWasGiven(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	for _, kind := range mediaKinds {
 		reply := sendMedia(t, k, testChatID, kind.method, kind.param, kind.param, "never-issued")
 		if reply.OK || !strings.Contains(reply.Description, "wrong file identifier") {
@@ -404,7 +404,7 @@ func TestAFileIDHasToBeOneTheBotWasGiven(t *testing.T) {
 }
 
 func TestAFileIsSentAgainOnlyAsWhatItIs(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	photo := k.Upload("photo", "face.jpg", []byte("jpeg")).ID
 	for _, kind := range mediaKinds {
 		if kind.param == "photo" {
@@ -435,7 +435,7 @@ func TestAFileIsSentAgainOnlyAsWhatItIs(t *testing.T) {
 
 // A URL is not an id: Telegram fetches what it points at, and that is a file of its own from then on.
 func TestAFileSentByURLBecomesOneTheBotHolds(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	const address = "https://example.com/face.jpg"
 	if reply := sendMedia(t, k, testChatID, "sendPhoto", "photo", "photo", address); !reply.OK {
 		t.Fatalf("sendPhoto by URL = %+v, want it served", reply)
@@ -454,7 +454,7 @@ func TestAFileSentByURLBecomesOneTheBotHolds(t *testing.T) {
 }
 
 func TestAnUploadIsWhatItWasFirstSentAs(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	ctx := context.Background()
 

@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,86 @@ import (
 )
 
 // menuBot answers text with a keyboard and echoes back whatever button is tapped.
+func tapping(data string) *models.InlineKeyboardMarkup {
+	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "Go", CallbackData: data}}}}
+}
+
+func TestCallbackDataIsMeasuredInBytes(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ctx := context.Background()
+	ada := k.User(7, Started())
+
+	for _, c := range []struct {
+		name, data string
+		fits       bool
+	}{
+		{"at the limit", strings.Repeat("a", mostCallbackData), true},
+		{"one over", strings.Repeat("a", mostCallbackData+1), false},
+		{"32 Persian letters", strings.Repeat("س", mostCallbackData/2), true},
+		{"33 Persian letters", strings.Repeat("س", mostCallbackData/2+1), false},
+	} {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: c.name, ReplyMarkup: tapping(c.data)})
+		if fits := err == nil; fits != c.fits {
+			t.Errorf("%s: err = %v, want it to fit: %v", c.name, err, c.fits)
+		}
+		if err != nil && !strings.Contains(err.Error(), "BUTTON_DATA_INVALID") {
+			t.Errorf("%s: err = %v, want Telegram's refusal", c.name, err)
+		}
+	}
+
+	// The library leaves empty data off, so only a raw call can send it.
+	reply := callJSON(t, k, "sendMessage", fmt.Sprintf(
+		`{"chat_id":%d,"text":"x","reply_markup":{"inline_keyboard":[[{"text":"Go","callback_data":""}]]}}`, ada.ID()))
+	if reply.OK || !strings.Contains(reply.Description, "BUTTON_DATA_INVALID") {
+		t.Errorf("empty data = %+v, want it refused", reply)
+	}
+
+	_, err := b.EditMessageReplyMarkup(ctx, &bot.EditMessageReplyMarkupParams{
+		ChatID: ada.ID(), MessageID: ada.Screen().ID, ReplyMarkup: tapping(strings.Repeat("a", mostCallbackData+1)),
+	})
+	if err == nil || !strings.Contains(err.Error(), "BUTTON_DATA_INVALID") {
+		t.Errorf("edit: err = %v, want data over the limit refused", err)
+	}
+}
+
+func TestAResultsButtonsAreHeldToTheSameBytes(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	var err error
+	k.DeliverTo(func(ctx context.Context, u *models.Update) {
+		_, err = b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+			InlineQueryID: u.InlineQuery.ID,
+			Results: []models.InlineQueryResult{&models.InlineQueryResultArticle{
+				ID: "1", Title: "Go", InputMessageContent: &models.InputTextMessageContent{MessageText: "go"},
+				ReplyMarkup: tapping(strings.Repeat("a", mostCallbackData+1)),
+			}},
+		})
+	})
+
+	k.User(7).Search("go")
+	if err == nil || !strings.Contains(err.Error(), "BUTTON_DATA_INVALID") {
+		t.Errorf("err = %v, want a result carrying data over the limit refused", err)
+	}
+}
+
+func TestAnAnswerToATapHoldsTwoHundredCharacters(t *testing.T) {
+	b := newClient(t, New(t))
+	ctx := context.Background()
+
+	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: "1", Text: strings.Repeat("س", mostAnswer),
+	}); err != nil {
+		t.Errorf("at the limit: %v", err)
+	}
+	_, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
+		CallbackQueryID: "2", Text: strings.Repeat("a", mostAnswer+1), ShowAlert: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "too long") {
+		t.Errorf("one over: err = %v, want it refused", err)
+	}
+}
+
 func menuBot(t *testing.T, k *Kitchen, rows ...[]models.InlineKeyboardButton) *bot.Bot {
 	t.Helper()
 	return syncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {

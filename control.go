@@ -13,8 +13,6 @@ import (
 
 const controlPrefix = "/kitchen/"
 
-// order is everything the control surface takes, in one shape: a dev tool
-// posting JSON should not have to know which fields this verb happens to want.
 type order struct {
 	ID       int64    `json:"id"`
 	Type     string   `json:"type"`
@@ -29,6 +27,7 @@ type order struct {
 	Name     string   `json:"name"`
 	Args     []string `json:"args"`
 	Button   string   `json:"button"`
+	Started  bool     `json:"started"`
 }
 
 var controlVerbs = map[string]func(*Kitchen, order) any{
@@ -99,6 +98,7 @@ func ordered(r *http.Request) (order, error) {
 	asked.Text, asked.Name, asked.Button = q.Get("text"), q.Get("name"), q.Get("button")
 	asked.First, asked.Last, asked.Username = q.Get("first_name"), q.Get("last_name"), q.Get("username")
 	asked.Language, asked.Args = q.Get("language"), q["arg"]
+	asked.Started = q.Get("started") == "true"
 	return asked, nil
 }
 
@@ -126,6 +126,9 @@ func (k *Kitchen) introduce(asked order) any {
 	}
 	if asked.Language != "" {
 		named = append(named, WithLanguage(asked.Language))
+	}
+	if asked.Started {
+		named = append(named, Started())
 	}
 	k.User(asked.ID, named...)
 	return nil

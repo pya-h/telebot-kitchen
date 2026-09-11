@@ -92,9 +92,7 @@ func (p params) messageID() (int, error) {
 	return id, nil
 }
 
-// An absent or empty keyboard is normalized to nil, so "no keyboard" has one
-// representation whichever way the bot expressed it.
-func (p params) markup() (*models.InlineKeyboardMarkup, error) {
+func (p params) keyboard() (*models.InlineKeyboardMarkup, error) {
 	raw, ok := p["reply_markup"]
 	if !ok || raw == "" {
 		return nil, nil
@@ -105,6 +103,21 @@ func (p params) markup() (*models.InlineKeyboardMarkup, error) {
 	}
 	if len(markup.InlineKeyboard) == 0 {
 		return nil, nil
+	}
+	return markup, nil
+}
+
+func (p params) markup() (*models.InlineKeyboardMarkup, error) {
+	markup, err := p.keyboard()
+	if err != nil || markup == nil {
+		return nil, err
+	}
+	var taps buttonData
+	if err := json.Unmarshal([]byte(p["reply_markup"]), &taps); err != nil {
+		return nil, badRequest("reply_markup")
+	}
+	if err := taps.check(); err != nil {
+		return nil, err
 	}
 	return markup, nil
 }

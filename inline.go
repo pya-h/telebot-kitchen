@@ -155,6 +155,15 @@ func (k *Kitchen) answerInlineQuery(p params) (any, error) {
 		if err := json.Unmarshal(one, &fields); err != nil {
 			return nil, badRequest("results")
 		}
+		var taps struct {
+			ReplyMarkup buttonData `json:"reply_markup"`
+		}
+		if err := json.Unmarshal(one, &taps); err != nil {
+			return nil, badRequest("results")
+		}
+		if err := taps.ReplyMarkup.check(); err != nil {
+			return nil, err
+		}
 		message, err := k.becomes(result, fields)
 		if err != nil {
 			return nil, err
@@ -240,9 +249,6 @@ func (m *Member) Search(query string) {
 	}})
 }
 
-// Pick chooses one of the results the bot offered, by its title or its id. The
-// message it becomes lands in the chat, and the bot is told through
-// chosen_inline_result rather than told twice.
 func (m *Member) Pick(titleOrID string) {
 	k := m.kitchen()
 

@@ -10,7 +10,7 @@ import (
 )
 
 func TestCallsAreRecordedInOrder(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	mustSend(t, b, "one")
 	mustSend(t, b, "two")
@@ -86,7 +86,7 @@ func TestMatchersDescribeWhatTheyWant(t *testing.T) {
 }
 
 func TestParamReachesAnythingUnmatched(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{

@@ -13,7 +13,7 @@ func TestABotSendsAPlaceAsBothVenueAndCoordinates(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendVenue(context.Background(), &bot.SendVenueParams{
 		ChatID: ada.ChatID(), Latitude: 35.7, Longitude: 51.4,
@@ -55,7 +55,7 @@ func TestABotSendsAContactByName(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendContact(context.Background(), &bot.SendContactParams{
 		ChatID: ada.ChatID(), PhoneNumber: "+989120000000", FirstName: "Bob", LastName: "Ross",
@@ -84,7 +84,7 @@ func TestARollIsRepeatable(t *testing.T) {
 		k := New(t)
 		b := newClient(t, k)
 		k.DeliverTo(func(context.Context, *models.Update) {})
-		ada := k.User(7)
+		ada := k.User(7, Started())
 		for range 3 {
 			if _, err := b.SendDice(context.Background(), &bot.SendDiceParams{ChatID: ada.ChatID()}); err != nil {
 				t.Fatalf("dice: %v", err)
@@ -108,6 +108,7 @@ func TestARollIsRepeatable(t *testing.T) {
 
 func TestTelegramRollsOnlyTheDiceItHas(t *testing.T) {
 	k := New(t)
+	k.User(7, Started())
 	if reply := callForm(t, k, "sendDice", map[string]string{"chat_id": "7", "emoji": "🍒"}); reply.OK {
 		t.Error("a cherry was rolled, want it refused")
 	}
@@ -120,7 +121,7 @@ func TestABotAsksAPollAndTheChatSeesWhatItAsks(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendPoll(context.Background(), &bot.SendPollParams{
 		ChatID: ada.ChatID(), Question: "Pizza or pasta?",
@@ -163,6 +164,7 @@ func TestAPollTelegramWouldRefuse(t *testing.T) {
 
 func TestAQuizKeepsItsAnswer(t *testing.T) {
 	k := New(t)
+	k.User(7, Started())
 	reply := callForm(t, k, "sendPoll", map[string]string{
 		"chat_id": "7", "question": "2+2?", "options": `[{"text":"4"},{"text":"5"}]`,
 		"type": "quiz", "correct_option_ids": "[0]", "is_anonymous": "false",

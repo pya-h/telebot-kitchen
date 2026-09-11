@@ -502,3 +502,33 @@ func styledText(text, mode string, given []models.MessageEntity) (string, []mode
 	}
 	return styleOf(text, mode)
 }
+
+// Counted once the markup is off, in the UTF-16 units entities are measured in.
+const (
+	mostText    = 4096
+	mostCaption = 1024
+)
+
+func (p params) text() (string, []models.MessageEntity, error) {
+	text, entities, err := p.styled("text", "entities")
+	switch {
+	case err != nil:
+		return "", nil, err
+	case text == "":
+		return "", nil, requestError("message text is empty")
+	case utf16Len(text) > mostText:
+		return "", nil, requestError("message is too long")
+	}
+	return text, entities, nil
+}
+
+func (p params) caption() (string, []models.MessageEntity, error) {
+	return fitCaption(p.styled("caption", "caption_entities"))
+}
+
+func fitCaption(caption string, entities []models.MessageEntity, err error) (string, []models.MessageEntity, error) {
+	if err == nil && utf16Len(caption) > mostCaption {
+		return "", nil, requestError("message caption is too long")
+	}
+	return caption, entities, err
+}

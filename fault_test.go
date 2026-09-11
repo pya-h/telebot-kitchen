@@ -29,7 +29,7 @@ func TestFloodWaitCarriesItsRetryAfter(t *testing.T) {
 }
 
 func TestFailOnceLetsTheRetryThrough(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.FailOnce(ServerError(), Method("sendMessage"))
 
@@ -47,7 +47,7 @@ func TestFailOnceLetsTheRetryThrough(t *testing.T) {
 }
 
 func TestFailAfterSparesTheFirstCalls(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.FailAfter(2, ServerError(), Method("sendMessage"))
 
@@ -62,7 +62,7 @@ func TestFailAfterSparesTheFirstCalls(t *testing.T) {
 }
 
 func TestFaultsAreScopedToWhatTheyMatch(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	k.Fail(ServerError(), ToChat(testChatID))
 
@@ -89,7 +89,7 @@ func TestBrokenRepliesReachTheBotAsFailures(t *testing.T) {
 }
 
 func TestClearingAFaultRestoresTheKitchen(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	standing := k.Fail(ServerError(), Method("sendMessage"))

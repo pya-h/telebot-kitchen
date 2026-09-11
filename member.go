@@ -242,7 +242,7 @@ func (m *Member) AskToJoin(bio ...string) {
 	}
 
 	who := m.user.identity()
-	if !k.joins.ask(m.chat.id, who) {
+	if !k.joins.ask(m.chat.id, who, k.clock.Now()) {
 		k.tb.Errorf("kitchen: %s has already asked to join, and Telegram takes one request at a time", m)
 		return
 	}

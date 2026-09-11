@@ -51,7 +51,7 @@ func TestNothingIsChargedUntilTheBotApproves(t *testing.T) {
 	k := New(t)
 	b, seen := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, ok := ada.Pay()
@@ -83,7 +83,7 @@ func TestARefusedCheckoutChargesNothing(t *testing.T) {
 	k := New(t)
 	b, _ := checkoutBot(t, k, false)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	if paid, ok := ada.Pay(); ok {
@@ -102,7 +102,7 @@ func TestABotThatNeverAnswersChargesNothing(t *testing.T) {
 	k := New(tb)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	if _, ok := ada.Pay(); ok {
@@ -119,7 +119,7 @@ func TestARefundRevokesTheChargeItGaveBack(t *testing.T) {
 	k := New(t)
 	b, _ := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, _ := ada.Pay()
@@ -145,7 +145,7 @@ func TestARefundIsNotAnUpdate(t *testing.T) {
 	k := New(t)
 	b, seen := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, _ := ada.Pay()
@@ -166,7 +166,7 @@ func TestAChargeIsGivenBackOnlyOnce(t *testing.T) {
 	k := New(t)
 	b, _ := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, _ := ada.Pay()
@@ -185,7 +185,7 @@ func TestARefundNeedsTheUserWhoPaid(t *testing.T) {
 	k := New(t)
 	b, _ := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada, grace := k.User(7), k.User(8)
+	ada, grace := k.User(7, Started()), k.User(8)
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, _ := ada.Pay()
@@ -207,7 +207,7 @@ func TestTheStarLedgerReadsBackThroughTheLibrary(t *testing.T) {
 	k := New(t)
 	b, _ := checkoutBot(t, k, true)
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7, WithFullName("Ada", "Lovelace"))
+	ada := k.User(7, WithFullName("Ada", "Lovelace"), Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	paid, _ := ada.Pay()
@@ -261,8 +261,6 @@ func TestACheckoutQueryNobodyIssuedIsRefused(t *testing.T) {
 	}
 }
 
-// Telegram takes one answer per query; a bot answering twice is a bug worth
-// seeing rather than a second charge worth taking.
 func TestACheckoutQueryIsAnsweredOnce(t *testing.T) {
 	k := New(t)
 	var second error
@@ -275,7 +273,7 @@ func TestACheckoutQueryIsAnsweredOnce(t *testing.T) {
 		_, second = b.AnswerPreCheckoutQuery(ctx, answer)
 	})
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	if _, ok := ada.Pay(); !ok {
@@ -290,7 +288,7 @@ func TestACheckoutQueryIsAnsweredOnce(t *testing.T) {
 }
 
 func TestAnInvoiceReadsAsItsTitle(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	invoiceFor(t, b, testChatID)
 
@@ -335,7 +333,7 @@ func TestAReplySentDuringCheckoutIsStillRead(t *testing.T) {
 		})
 	})
 	k.DeliverTo(b.ProcessUpdate)
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	invoiceFor(t, b, ada.ChatID())
 	if _, ok := ada.Pay(); !ok {

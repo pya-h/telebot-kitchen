@@ -25,7 +25,7 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	caption, entities, err := p.styled("caption", "caption_entities")
+	caption, entities, err := p.caption()
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (k *Kitchen) relayed(p params, what string) (source models.Message, target 
 	if !found {
 		return models.Message{}, 0, requestError("message to " + what + " not found")
 	}
-	if err := k.world.mayPost(target); err != nil {
+	if err := k.mayPost(target); err != nil {
 		return models.Message{}, 0, err
 	}
 	return source, target, nil

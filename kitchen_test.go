@@ -118,6 +118,15 @@ func (k *Kitchen) methodURL(method string) string {
 	return k.APIURL() + "/bot" + k.token + "/" + method
 }
 
+// talking is a kitchen whose two test chats belong to users who already started the bot.
+func talking(t *testing.T, opts ...Option) *Kitchen {
+	t.Helper()
+	k := New(t, opts...)
+	k.User(testChatID, Started())
+	k.User(otherChatID, Started())
+	return k
+}
+
 func newClient(t *testing.T, k *Kitchen) *bot.Bot {
 	t.Helper()
 	b, err := bot.New(k.Token(), bot.WithServerURL(k.APIURL()))

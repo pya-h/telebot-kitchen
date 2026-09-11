@@ -54,7 +54,7 @@ func TestAVoteReachesTheBotTwiceOverAndCounts(t *testing.T) {
 			states = append(states, u.Poll)
 		}
 	})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question:    "Pizza or pasta?",
@@ -163,7 +163,7 @@ func TestChangingAnAnswerReplacesItRatherThanAddingOne(t *testing.T) {
 			last = u.Poll
 		}
 	})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question:    "Pizza or pasta?",
@@ -192,7 +192,7 @@ func TestARetractedVoteNamesNoOption(t *testing.T) {
 			last = u.Poll
 		}
 	})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question:    "Pizza or pasta?",
@@ -215,7 +215,7 @@ func TestSeveralAnswersOnlyWhereThePollAllowsThem(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question:              "Toppings?",
@@ -240,7 +240,7 @@ func TestABotStopsItsOwnPollAndIsNotToldItDid(t *testing.T) {
 			states++
 		}
 	})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question: "Pizza or pasta?",
@@ -274,7 +274,7 @@ func TestNobodyAnswersAClosedPoll(t *testing.T) {
 	k := New(tb)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendPoll(context.Background(), &bot.SendPollParams{
 		ChatID: ada.ChatID(), Question: "Pizza or pasta?",
@@ -333,7 +333,7 @@ func TestAnAnswerTelegramWouldNotTake(t *testing.T) {
 	k := New(tb)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	ada.Vote("Pizza") // nothing asked yet
 
@@ -359,7 +359,7 @@ func TestStoppingWhatIsNotAPoll(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: ada.ChatID(), Text: "hello"}); err != nil {
 		t.Fatalf("send: %v", err)
@@ -406,7 +406,7 @@ func TestAPollRelayedElsewhereIsAPollOfItsOwn(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada, bob := k.User(7), k.User(8)
+	ada, bob := k.User(7, Started()), k.User(8, Started())
 
 	asked(t, k, b, ada, &bot.SendPollParams{
 		Question: "Pizza or pasta?",

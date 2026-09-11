@@ -21,7 +21,7 @@ func TestAReactionReachesTheBotWithWhatItReplaced(t *testing.T) {
 			seen = append(seen, u.MessageReaction)
 		}
 	})
-	ada := k.User(7)
+	ada := k.User(7, Started())
 
 	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{ChatID: ada.ChatID(), Text: "hello"}); err != nil {
 		t.Fatalf("send: %v", err)

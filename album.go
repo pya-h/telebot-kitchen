@@ -92,7 +92,7 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 	kinds := make([]string, len(group))
 	for i := range group {
 		kinds[i] = group[i].Type
-		caption, marked, err := styledText(group[i].Caption, group[i].ParseMode, group[i].CaptionEntities)
+		caption, marked, err := fitCaption(styledText(group[i].Caption, group[i].ParseMode, group[i].CaptionEntities))
 		if err != nil {
 			return nil, err
 		}
@@ -101,7 +101,7 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 	if why := grouped(kinds); why != "" {
 		return nil, requestError(why)
 	}
-	if err := k.world.mayPost(chatID); err != nil {
+	if err := k.mayPost(chatID); err != nil {
 		return nil, err
 	}
 	files := make([]File, len(group))

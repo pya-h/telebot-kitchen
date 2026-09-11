@@ -23,7 +23,7 @@ var testKeyboard = &models.InlineKeyboardMarkup{
 }
 
 func TestSendMessageAppendsToChat(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sent, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
@@ -62,7 +62,7 @@ func TestSendMessageRejectsEmptyText(t *testing.T) {
 }
 
 func TestSendPhotoRetainsUpload(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	want := []byte("jpeg-bytes")
@@ -93,7 +93,7 @@ func TestSendPhotoRetainsUpload(t *testing.T) {
 
 // A file id the bot's storage held before the test is re-sent as a plain string, not bytes.
 func TestSendPhotoAcceptsAFileIDTheBotAlreadyHeld(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	held := k.Upload("photo", "face.jpg", []byte("jpeg"))
 
@@ -110,7 +110,7 @@ func TestSendPhotoAcceptsAFileIDTheBotAlreadyHeld(t *testing.T) {
 }
 
 func TestEditMessageTextInPlace(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	sent := mustSend(t, b, "before")
 
@@ -139,7 +139,7 @@ func TestEditMessageTextInPlace(t *testing.T) {
 }
 
 func TestEditRejectsIdenticalContent(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	sent := mustSend(t, b, "same")
 
@@ -154,7 +154,7 @@ func TestEditRejectsIdenticalContent(t *testing.T) {
 }
 
 func TestEditMessageCaptionInPlace(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
@@ -180,7 +180,7 @@ func TestEditMessageCaptionInPlace(t *testing.T) {
 }
 
 func TestEditMessageReplyMarkupKeepsText(t *testing.T) {
-	b := newClient(t, New(t))
+	b := newClient(t, talking(t))
 	sent := mustSend(t, b, "menu")
 
 	edited, err := b.EditMessageReplyMarkup(context.Background(), &bot.EditMessageReplyMarkupParams{
@@ -206,7 +206,7 @@ func TestEditMessageReplyMarkupKeepsText(t *testing.T) {
 }
 
 func TestEditTextRejectsAPhotoMessage(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	sent, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
@@ -229,7 +229,7 @@ func TestEditTextRejectsAPhotoMessage(t *testing.T) {
 }
 
 func TestEditCaptionRejectsATextMessage(t *testing.T) {
-	b := newClient(t, New(t))
+	b := newClient(t, talking(t))
 	sent := mustSend(t, b, "hello")
 
 	_, err := b.EditMessageCaption(context.Background(), &bot.EditMessageCaptionParams{
@@ -265,7 +265,7 @@ func TestEditMissingMessage(t *testing.T) {
 }
 
 func TestDeleteMessageRemovesFromLog(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 	first := mustSend(t, b, "one")
 	mustSend(t, b, "two")
@@ -332,7 +332,7 @@ func mustSend(t *testing.T, b *bot.Bot, text string) *models.Message {
 }
 
 func TestAChatActionLandsNowhereButTheCallLog(t *testing.T) {
-	k := New(t)
+	k := talking(t)
 	b := newClient(t, k)
 
 	if _, err := b.SendChatAction(context.Background(), &bot.SendChatActionParams{

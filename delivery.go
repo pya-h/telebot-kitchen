@@ -50,6 +50,10 @@ func (k *Kitchen) deliver(u models.Update) {
 	defer k.activity.note()
 
 	u.ID = k.world.nextUpdate()
+	// Anything a user does in the bot's private chat means they have opened it.
+	if where, who, _ := about(&u); where != nil && who != nil && where.Type == models.ChatTypePrivate && where.ID == who.ID {
+		k.world.start(who.ID)
+	}
 
 	// Released before the bot runs: its own API calls take this lock too.
 	k.mu.RLock()

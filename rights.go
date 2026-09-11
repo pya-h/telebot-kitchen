@@ -1,14 +1,13 @@
 package kitchen
 
 import (
+	"errors"
 	"net/http"
 	"slices"
 
 	"github.com/go-telegram/bot/models"
 )
 
-// Right is one thing an administrator may do. Only the ones a call can be
-// refused for are enforced; the rest are reported and nothing more.
 type Right string
 
 const (
@@ -118,6 +117,17 @@ func (s standing) chatMember() models.ChatMember {
 	}
 }
 
+var errNotStarted = forbidden("bot can't initiate conversation with a user")
+
+// A user waiting on a join request may be written to for a while, started or not.
+func (k *Kitchen) mayPost(chatID int64) error {
+	err := k.world.mayPost(chatID)
+	if errors.Is(err, errNotStarted) && k.joins.knocking(chatID, k.clock.Now()) {
+		return nil
+	}
+	return err
+}
+
 // mayPost reports why the bot cannot put a message in this chat, if it cannot.
 func (w *world) mayPost(chatID int64) error {
 	w.mu.RLock()
@@ -125,9 +135,11 @@ func (w *world) mayPost(chatID int64) error {
 
 	c, ok := w.chats[chatID]
 	if !ok {
-		return nil // the private chat this call opens
+		return requestError("chat not found")
 	}
 	switch {
+	case c.info.Type == models.ChatTypePrivate && !c.started:
+		return errNotStarted
 	case c.bot.status == models.ChatMemberTypeBanned:
 		return forbidden("bot was kicked from the " + string(c.info.Type) + " chat")
 	case !c.bot.present():

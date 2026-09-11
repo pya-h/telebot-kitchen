@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -85,6 +86,40 @@ func TestApprovingLetsThemInAndNamesTheBot(t *testing.T) {
 		ChatID: club.ID(), UserID: 7,
 	}); err == nil {
 		t.Error("the request was approved twice, want the second refused")
+	}
+}
+
+func TestTheBotMayWriteToSomebodyWaitingToJoin(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	ctx := context.Background()
+	send := func(chatID int64) error {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "we will get back to you"})
+		return err
+	}
+	club := k.Group(-42, "Club")
+	ada, grace := k.User(7), k.User(8)
+	ada.In(club).AskToJoin()
+	grace.In(club).AskToJoin()
+
+	if err := send(ada.ID()); err != nil {
+		t.Errorf("while ada's request waits: %v", err)
+	}
+	if _, err := b.DeclineChatJoinRequest(ctx, &bot.DeclineChatJoinRequestParams{ChatID: club.ID(), UserID: ada.ID()}); err != nil {
+		t.Fatalf("decline: %v", err)
+	}
+	if err := send(ada.ID()); err == nil {
+		t.Error("once ada's request is answered: sent, want it forbidden")
+	}
+
+	k.Clock().Advance(knockWindow - time.Second)
+	if err := send(grace.ID()); err != nil {
+		t.Errorf("a second before the window closes: %v", err)
+	}
+	k.Clock().Advance(time.Second)
+	if err := send(grace.ID()); err == nil || !strings.Contains(err.Error(), "can't initiate") {
+		t.Errorf("five minutes after grace asked: err = %v, want it forbidden", err)
 	}
 }
 

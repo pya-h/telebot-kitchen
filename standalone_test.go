@@ -97,6 +97,21 @@ func TestTheControlSurfaceDrivesAConversation(t *testing.T) {
 	}
 }
 
+func TestTheControlSurfaceSeatsAUserWhoAlreadyStarted(t *testing.T) {
+	k, _ := standalone(t)
+
+	ask(t, k, http.MethodPost, "/kitchen/user", `{"id":7,"started":true}`)
+	ask(t, k, http.MethodGet, "/kitchen/user?id=8&started=true", "")
+	ask(t, k, http.MethodPost, "/kitchen/user", `{"id":9}`)
+
+	for chat, started := range map[string]bool{"7": true, "8": true, "9": false} {
+		reply := callJSON(t, k, "sendMessage", `{"chat_id":`+chat+`,"text":"welcome back"}`)
+		if reply.OK != started {
+			t.Errorf("to user %s = %+v, want it sent: %v", chat, reply, started)
+		}
+	}
+}
+
 // Nothing can fail a run that is not a test, so what the kitchen would have
 // failed comes back with the reply instead of only being written down.
 func TestTheControlSurfaceAnswersWithWhatWentWrong(t *testing.T) {

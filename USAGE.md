@@ -66,6 +66,19 @@ Users are virtual people with their own private chat. `k.User(id, opts...)`
 creates one on first mention and returns the same user afterwards. Their id is
 positive, as Telegram's are, and a negative one is refused.
 
+Only the user opens that chat. Until they do something in it — a message, a
+command, a tap — the bot writing there is `403 Forbidden: bot can't initiate
+conversation with a user`, and a chat the kitchen never heard of is `400 chat not
+found`. Speaking in a group does not open it. A test about somebody who pressed
+Start long ago says so rather than replaying it:
+
+```go
+ada := k.User(101, kitchen.Started())
+```
+
+One exception, as on Telegram: for five minutes of the kitchen's clock after
+somebody asks to join a chat, and until the bot answers, it may write to them.
+
 | verb | what it does |
 | --- | --- |
 | `Send(text)` | a text message, with command entities parsed as Telegram parses them |
@@ -544,6 +557,12 @@ emoji ahead of a Persian word still finds the word. Entities the bot describes
 outright win over a parse mode, as they do live, and markup the kitchen cannot
 read is refused the way Telegram refuses it — an unclosed `*`, a crossing pair,
 a tag Telegram has no meaning for.
+
+Length is counted the same way, once the markup is off, so `*bold*` costs four: a
+message's text holds 4096 (`message is too long`) and a caption 1024 (`message
+caption is too long`). A button's `callback_data` is 1 to 64 **bytes** — 32
+Persian letters — or `BUTTON_DATA_INVALID`, and `answerCallbackQuery` text stops
+at 200.
 
 `MarkdownV2` and `Markdown` cover bold, italic, underline, strikethrough,
 spoiler, code, code blocks and links; `HTML` covers those and `<blockquote>`.
@@ -1073,8 +1092,9 @@ curl ':8081/kitchen/transcript?chat=-1001'
 curl  :8081/kitchen/calls
 ```
 
-Also `/kitchen/command` (`{"name":"start","args":[…]}`), `/kitchen/leave` and
-`/kitchen/settle`. Nothing can fail a run that is not a test, so anything the
+A user who opened the bot's private chat before the kitchen started takes
+`"started":true`. Also `/kitchen/command` (`{"name":"start","args":[…]}`),
+`/kitchen/leave` and `/kitchen/settle`. Nothing can fail a run that is not a test, so anything the
 kitchen would have failed comes back with the reply:
 
 ```json

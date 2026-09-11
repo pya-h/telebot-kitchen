@@ -33,7 +33,7 @@ func (c Call) plain(field, marked string) string {
 }
 
 func (c Call) Keyboard() [][]Button {
-	markup, err := params(c.Params).markup()
+	markup, err := params(c.Params).keyboard()
 	if err != nil {
 		return nil
 	}

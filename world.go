@@ -14,12 +14,11 @@ import (
 type chat struct {
 	info models.Chat
 	// Kept apart from members, who are people.
-	bot     standing
-	members map[int64]*standing
-	pinned  []int
-	// A reply keyboard belongs to the chat, not to the message that raised it:
-	// it stays up until another one replaces or removes it.
+	bot           standing
+	members       map[int64]*standing
+	pinned        []int
 	menu          [][]string
+	started       bool // a private chat only the user can open
 	movedTo       int64
 	nextMessageID int
 	messages      []*models.Message
@@ -203,6 +202,12 @@ func (w *world) join(chatID int64, u models.User) {
 	defer w.mu.Unlock()
 
 	w.place(w.chatAt(chatID), u)
+}
+
+func (w *world) start(userID int64) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.chatAt(userID).started = true
 }
 
 func (w *world) place(c *chat, u models.User) *standing {
