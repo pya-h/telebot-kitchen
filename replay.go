@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/go-telegram/bot/models"
@@ -35,6 +36,7 @@ func (k *Kitchen) ReplayFrom(r io.Reader) {
 
 	// The whole cast is seated before the first update lands, so a bot that
 	// asks about somebody who only speaks later is still answered.
+	k.allowRecorded(recorded)
 	was := botBehind(recorded)
 	for _, u := range recorded {
 		k.seat(u, was)
@@ -42,6 +44,24 @@ func (k *Kitchen) ReplayFrom(r io.Reader) {
 	for _, u := range recorded {
 		k.deliver(u)
 	}
+}
+
+// allowRecorded adds what the recording carries to the kinds the bot hears: a
+// recording is of a bot that was receiving them.
+func (k *Kitchen) allowRecorded(recorded []models.Update) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+
+	asked := slices.Clone(k.allowed)
+	if len(asked) == 0 {
+		asked = DefaultUpdates()
+	}
+	for _, u := range recorded {
+		if kind := kindOf(&u); kind != "" && !slices.Contains(asked, kind) {
+			asked = append(asked, kind)
+		}
+	}
+	k.allowed = asked
 }
 
 // botBehind is the bot the recording was made by, taken from the first message

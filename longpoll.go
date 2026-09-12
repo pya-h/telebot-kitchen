@@ -118,6 +118,9 @@ func (k *Kitchen) getUpdates(p params) (any, error) {
 		k.reportPollingUnbound()
 	}
 
+	if err := k.registerKinds(p); err != nil {
+		return nil, err
+	}
 	if !k.updates.begin() {
 		return nil, conflict("terminated by other getUpdates request; make sure that only one bot instance is running")
 	}
@@ -131,9 +134,6 @@ func (k *Kitchen) getUpdates(p params) (any, error) {
 		limit = mostUpdates
 	}
 
-	// A poll waits for as long as it asked, but never past the kitchen's own
-	// bound: a test that has nothing coming should fail on its assertion rather
-	// than on a bot's thirty-second timeout.
 	waiting := k.waitTimeout
 	if asked := time.Duration(p.number("timeout")) * time.Second; asked > 0 && asked < waiting {
 		waiting = asked

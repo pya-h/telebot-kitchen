@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 )
@@ -129,7 +130,7 @@ func assertWebhookURL(t *testing.T, k *Kitchen, url string, allowed []string) {
 	if k.webhook.url != url {
 		t.Errorf("webhook url = %q, want %q", k.webhook.url, url)
 	}
-	if len(k.webhook.allowedUpdates) != len(allowed) || (len(allowed) > 0 && k.webhook.allowedUpdates[0] != allowed[0]) {
-		t.Errorf("allowed updates = %v, want %v", k.webhook.allowedUpdates, allowed)
+	if !slices.Equal(k.allowed, allowed) {
+		t.Errorf("allowed updates = %v, want %v", k.allowed, allowed)
 	}
 }

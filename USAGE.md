@@ -60,6 +60,39 @@ func TestUnknownTextIsEchoed(t *testing.T) {
 exposes a webhook handler uses `DeliverToWebhook(h)` instead, and the kitchen
 posts to it in process.
 
+### The kinds a bot is given
+
+Telegram hands a bot only the update kinds it asked for, and a bot that asked
+for nothing gets everything **except** `chat_member`, `message_reaction` and
+`message_reaction_count`. The kitchen holds those three back the same way, so a
+handler for one of them fails here rather than in production:
+
+```go
+k := kitchen.New(t)                                  // the default set
+ada.In(team).Join()                                  // the bot hears the service message,
+                                                     // and nothing about chat_member
+```
+
+A dropped update is said once per kind through `t.Logf`, so `go test -v` names
+what went missing.
+
+The bot asks the usual way, through `setWebhook` or `getUpdates`: a list
+replaces the setting, an absent list keeps it, and an empty list is the default
+set again. A test can declare the same thing up front, which is what a bot bound
+with `DeliverTo` never registers:
+
+```go
+k := kitchen.New(t, kitchen.WithAllowedUpdates("message", "chat_member"))
+k := kitchen.New(t, kitchen.WithAllowedUpdates(append(kitchen.DefaultUpdates(), "chat_member")...))
+```
+
+The list replaces the default rather than adding to it, exactly as Telegram's
+does, and `DefaultUpdates()` is that default to build on. A kind Telegram does
+not have is a test error naming the ones it does.
+
+`Replay` is the exception: a recording is of a bot that was receiving what it
+carries, so replaying it adds those kinds rather than dropping them.
+
 ## Talking to the bot
 
 Users are virtual people with their own private chat. `k.User(id, opts...)`
@@ -613,6 +646,30 @@ menu
 [English] [فارسی]
 want button "Deutsch"
 ```
+
+### Negative assertions need a positive control
+
+`ExpectNothingMore` and `ExpectNo` pass when nothing arrives — including when
+nothing *can* arrive. Prove the wiring with one positive assertion in the same
+test before trusting a negative one.
+
+The trap this exists for: go-telegram/bot's `WebhookHandler` drops every update
+whose `X-Telegram-Bot-Api-Secret-Token` does not match the one the bot was built
+with, and it writes no status either way, so a bot built with
+`WithWebhookSecretToken` and never registered through `setWebhook` receives
+nothing while every negative assertion passes. Declare the secret to the kitchen
+and deliveries carry it from the first one:
+
+```go
+k := kitchen.New(t, kitchen.WithWebhookSecret("s3cret"))
+b, _ := bot.New(k.Token(), bot.WithServerURL(k.APIURL()),
+	bot.WithWebhookSecretToken("s3cret"))
+k.DeliverToWebhook(b.WebhookHandler())
+```
+
+If the bot then registers a *different* secret, the kitchen fails the test
+naming both. Delivering with no secret known at all is said once through
+`t.Logf`, since that is the shape of the trap.
 
 ## Waiting instead of sleeping
 

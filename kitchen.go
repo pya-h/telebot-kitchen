@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +26,7 @@ const (
 type TB interface {
 	Cleanup(func())
 	Errorf(format string, args ...any)
+	Logf(format string, args ...any)
 	Failed() bool
 }
 
@@ -49,7 +51,9 @@ type Kitchen struct {
 	activity   *activity
 
 	unsupported   sync.Map
+	dropped       sync.Map
 	polledUnbound sync.Once
+	noSecret      sync.Once
 
 	// Closed when the test is over, so a poll waiting on nothing gives up rather
 	// than holding the server open until it has waited its whole timeout out.
@@ -63,6 +67,8 @@ type Kitchen struct {
 	mu      sync.RWMutex
 	bot     models.User
 	webhook webhook
+	allowed []string
+	secret  string
 	process UpdateProcessor
 	polling bool
 	wire    bool
@@ -90,6 +96,12 @@ func WithAddress(addr string) Option { return func(k *Kitchen) { k.address = add
 // WithScrollback lets a tap reach buttons on older messages; without it only the newest keyboard answers.
 func WithScrollback() Option { return func(k *Kitchen) { k.scrollback = true } }
 
+func WithAllowedUpdates(kinds ...string) Option {
+	return func(k *Kitchen) { k.allowed = slices.Clone(kinds) }
+}
+
+func WithWebhookSecret(secret string) Option { return func(k *Kitchen) { k.secret = secret } }
+
 func New(tb TB, opts ...Option) *Kitchen {
 	k := &Kitchen{
 		tb:          tb,
@@ -114,6 +126,11 @@ func New(tb TB, opts ...Option) *Kitchen {
 	}
 	for _, opt := range opts {
 		opt(k)
+	}
+	for _, kind := range k.allowed {
+		if !slices.Contains(everyUpdateKind, kind) {
+			tb.Errorf("kitchen: no update is a %q; Telegram's kinds are %s", kind, strings.Join(everyUpdateKind, ", "))
+		}
 	}
 	k.bot.ID = botIDFrom(k.token)
 	k.world = newWorld(k.clock, k.bot)

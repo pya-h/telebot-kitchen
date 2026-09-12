@@ -19,6 +19,7 @@ import (
 type recordingTB struct {
 	mu       sync.Mutex
 	errs     []string
+	notes    []string
 	cleanups []func()
 }
 
@@ -32,6 +33,18 @@ func (r *recordingTB) Errorf(format string, args ...any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.errs = append(r.errs, fmt.Sprintf(format, args...))
+}
+
+func (r *recordingTB) Logf(format string, args ...any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.notes = append(r.notes, fmt.Sprintf(format, args...))
+}
+
+func (r *recordingTB) noted() []string {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]string(nil), r.notes...)
 }
 
 func (r *recordingTB) Failed() bool {
@@ -125,6 +138,10 @@ func talking(t *testing.T, opts ...Option) *Kitchen {
 	k.User(testChatID, Started())
 	k.User(otherChatID, Started())
 	return k
+}
+
+func alsoHearing(kinds ...string) Option {
+	return WithAllowedUpdates(append(DefaultUpdates(), kinds...)...)
 }
 
 func newClient(t *testing.T, k *Kitchen) *bot.Bot {

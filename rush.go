@@ -231,6 +231,9 @@ func (o *orderTB) Errorf(format string, args ...any) {
 	o.errs = append(o.errs, fmt.Sprintf(format, args...))
 }
 
+// A rush reports failures; a note has nowhere to go.
+func (o *orderTB) Logf(string, ...any) {}
+
 func (o *orderTB) Failed() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()

@@ -13,7 +13,7 @@ import (
 )
 
 func TestAReactionReachesTheBotWithWhatItReplaced(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("message_reaction"))
 	b := newClient(t, k)
 	var seen []*models.MessageReactionUpdated
 	k.DeliverTo(func(_ context.Context, u *models.Update) {
@@ -110,7 +110,7 @@ func TestTheBotIsNotToldAboutItsOwnReaction(t *testing.T) {
 }
 
 func TestAGroupTellsOnlyABotThatAdministersIt(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("message_reaction"))
 	b := newClient(t, k)
 	heard := 0
 	k.DeliverTo(func(_ context.Context, u *models.Update) {
@@ -144,7 +144,7 @@ func TestAGroupTellsOnlyABotThatAdministersIt(t *testing.T) {
 }
 
 func TestAChannelCountsReactionsWithoutNamingAnybody(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("message_reaction_count"))
 	k.DeliverTo(func(context.Context, *models.Update) {})
 	news := k.Channel(-1001, "News")
 	ada, bob := k.User(7).In(news), k.User(8).In(news)
@@ -182,7 +182,7 @@ func TestAChannelCountsReactionsWithoutNamingAnybody(t *testing.T) {
 }
 
 func TestAReactionSurvivesTheWebhookSeam(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("message_reaction", "message_reaction_count"))
 	bodies := make(chan []byte, 4)
 	k.DeliverToWebhook(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		body, _ := io.ReadAll(r.Body)

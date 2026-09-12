@@ -38,6 +38,12 @@ func (l *Log) Errorf(format string, args ...any) {
 	fmt.Fprintln(l.to, said)
 }
 
+func (l *Log) Logf(format string, args ...any) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	fmt.Fprintln(l.to, fmt.Sprintf(format, args...))
+}
+
 func (l *Log) Failed() bool {
 	l.mu.Lock()
 	defer l.mu.Unlock()

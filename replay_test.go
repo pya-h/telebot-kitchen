@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -295,5 +296,29 @@ func TestAMessageTheRecordingEditedEndsWhereItEnded(t *testing.T) {
 	}
 	if history := ada.History(); len(history) != 1 {
 		t.Errorf("history = %v, want the one message rather than both of its versions", history)
+	}
+}
+
+// A recording is of a bot that was receiving these kinds, so replaying it does
+// not drop them for the default set.
+func TestAReplayedRecordingBringsItsOwnKinds(t *testing.T) {
+	k := New(t)
+	var got updates
+	got.collect(k)
+
+	ada := models.User{ID: 7, FirstName: "Ada"}
+	team := models.Chat{ID: -42, Type: models.ChatTypeGroup, Title: "Standup"}
+	line, err := json.Marshal(models.Update{ChatMember: &models.ChatMemberUpdated{
+		Chat: team, From: ada, Date: 1700000000,
+		OldChatMember: models.ChatMember{Type: models.ChatMemberTypeLeft, Left: &models.ChatMemberLeft{User: &ada}},
+		NewChatMember: models.ChatMember{Type: models.ChatMemberTypeMember, Member: &models.ChatMemberMember{User: &ada}},
+	}})
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+	k.ReplayFrom(strings.NewReader(string(line) + "\n"))
+
+	if kinds := deliveredKinds(got.all()); !slices.Equal(kinds, []string{"chat_member"}) {
+		t.Errorf("kinds = %v, want the recorded kind delivered", kinds)
 	}
 }

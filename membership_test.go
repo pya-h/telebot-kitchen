@@ -146,7 +146,7 @@ func TestAChatDescribesItselfToTheBot(t *testing.T) {
 }
 
 func TestJoiningIsNewsAndBeingThereIsNot(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("chat_member"))
 	var got updates
 	got.collect(k)
 
@@ -176,7 +176,7 @@ func TestJoiningIsNewsAndBeingThereIsNot(t *testing.T) {
 }
 
 func TestLeavingTakesAMemberOffTheRoster(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("chat_member"))
 	var got updates
 	got.collect(k)
 

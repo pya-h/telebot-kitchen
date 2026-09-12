@@ -262,6 +262,8 @@ func (o *orderTB) Errorf(string, ...any) {
 	o.broke = true
 }
 
+func (o *orderTB) Logf(string, ...any) {}
+
 func (o *orderTB) Failed() bool { return o.failed() }
 
 func (o *orderTB) failed() bool {
@@ -292,9 +294,6 @@ type Report struct {
 	Steps    []Spread
 	Baseline Spread // the same lifecycle with no bot in it
 
-	// Failures counts the orders that broke, by kind: "assertion" for a script
-	// that reported, "stuck" for one that outlived its timeout, "build" for a
-	// bot that would not construct.
 	Failures map[string]int
 
 	Goroutines int // the peak seen while the run was going

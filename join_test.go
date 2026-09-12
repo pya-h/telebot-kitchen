@@ -49,7 +49,7 @@ func TestAskingToJoinIsNotJoining(t *testing.T) {
 }
 
 func TestApprovingLetsThemInAndNamesTheBot(t *testing.T) {
-	k := New(t)
+	k := New(t, alsoHearing("chat_member"))
 	b := newClient(t, k)
 	var changes []*models.ChatMemberUpdated
 	k.DeliverTo(func(_ context.Context, u *models.Update) {
