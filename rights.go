@@ -117,7 +117,10 @@ func (s standing) chatMember() models.ChatMember {
 	}
 }
 
-var errNotStarted = forbidden("bot can't initiate conversation with a user")
+var (
+	errNotStarted = forbidden("bot can't initiate conversation with a user")
+	errBlocked    = forbidden("bot was blocked by the user")
+)
 
 // A user waiting on a join request may be written to for a while, started or not.
 func (k *Kitchen) mayPost(chatID int64) error {
@@ -138,6 +141,8 @@ func (w *world) mayPost(chatID int64) error {
 		return requestError("chat not found")
 	}
 	switch {
+	case c.blocked():
+		return errBlocked
 	case c.info.Type == models.ChatTypePrivate && !c.started:
 		return errNotStarted
 	case c.bot.status == models.ChatMemberTypeBanned:
@@ -161,7 +166,14 @@ func (c *chat) mayDelete(m *models.Message, botID int64) error {
 	return requestError("message can't be deleted for everyone")
 }
 
+func (c *chat) blocked() bool {
+	return c.info.Type == models.ChatTypePrivate && c.bot.status == models.ChatMemberTypeBanned
+}
+
 func (c *chat) mayEdit(m *models.Message, botID int64) error {
+	if c.blocked() {
+		return errBlocked
+	}
 	if m.From != nil && m.From.ID == botID {
 		return nil
 	}

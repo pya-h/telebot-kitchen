@@ -159,6 +159,193 @@ func TestTheBotCannotWriteFirst(t *testing.T) {
 	}
 }
 
+func TestABlockedBotHearsOfItAndIsRefused(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	var got updates
+	got.collect(k)
+	ctx := context.Background()
+	send := func(chatID int64) error {
+		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: chatID, Text: "hello"})
+		return err
+	}
+
+	ada := k.User(7, Started())
+	card, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: "card"})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	ada.BlockBot()
+	seen := got.all()
+	if len(seen) != 1 || seen[0].MyChatMember == nil {
+		t.Fatalf("updates = %+v, want one my_chat_member", seen)
+	}
+	if blocked := seen[0].MyChatMember; blocked.Chat.ID != ada.ID() || blocked.From.ID != ada.ID() ||
+		blocked.OldChatMember.Type != models.ChatMemberTypeMember || blocked.NewChatMember.Type != models.ChatMemberTypeBanned {
+		t.Errorf("my_chat_member = %+v, want ada taking the bot from member to kicked", blocked)
+	}
+	if err := send(ada.ID()); err == nil || !strings.Contains(err.Error(), "bot was blocked by the user") {
+		t.Errorf("a send after the block: err = %v, want it forbidden", err)
+	}
+	if _, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID: ada.ID(), MessageID: card.ID, Text: "edited",
+	}); err == nil || !strings.Contains(err.Error(), "bot was blocked by the user") {
+		t.Errorf("an edit after the block: err = %v, want it forbidden", err)
+	}
+
+	ada.UnblockBot()
+	seen = got.all()
+	if len(seen) != 2 || seen[1].MyChatMember == nil ||
+		seen[1].MyChatMember.OldChatMember.Type != models.ChatMemberTypeBanned ||
+		seen[1].MyChatMember.NewChatMember.Type != models.ChatMemberTypeMember {
+		t.Errorf("updates = %+v, want the bot taken from kicked back to member", seen)
+	}
+	if err := send(ada.ID()); err != nil {
+		t.Errorf("a send after the unblock: %v", err)
+	}
+
+	// Blocking and unblocking is not opening the chat.
+	grace := k.User(9)
+	grace.BlockBot()
+	if err := send(grace.ID()); err == nil || !strings.Contains(err.Error(), "bot was blocked by the user") {
+		t.Errorf("to somebody who blocked a bot they never started: err = %v, want blocked", err)
+	}
+	grace.UnblockBot()
+	if err := send(grace.ID()); err == nil || !strings.Contains(err.Error(), "bot can't initiate conversation") {
+		t.Errorf("after unblocking a bot never started: err = %v, want it still unable to write first", err)
+	}
+}
+
+func TestAUserWhoBlockedTheBotCannotReachIt(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	var got updates
+	got.collect(k)
+	ada := k.User(7, Started())
+	said := func(act func()) []string {
+		before := len(tb.errors())
+		act()
+		return tb.errors()[before:]
+	}
+
+	ada.BlockBot()
+	for _, verb := range []struct {
+		name string
+		act  func()
+	}{
+		{"Send", func() { ada.Send("hi") }},
+		{"Tap", func() { ada.Tap("OK") }},
+		{"Edit", func() { ada.Edit(Message{ID: 1, ChatID: ada.ID()}, "hi") }},
+		{"ReactTo", func() { ada.ReactTo(Message{ID: 1, ChatID: ada.ID()}, "👍") }},
+		{"Vote", func() { ada.Vote("yes") }},
+		{"Pay", func() { ada.Pay() }},
+		{"Pick", func() { ada.Pick("first") }},
+	} {
+		if errs := said(verb.act); len(errs) != 1 || !strings.Contains(errs[0], "blocked the bot, so nothing") {
+			t.Errorf("%s: errors = %q, want one saying the user blocked the bot", verb.name, errs)
+		}
+	}
+	if errs := said(ada.BlockBot); len(errs) != 1 || !strings.Contains(errs[0], "already blocked") {
+		t.Errorf("blocking twice: errors = %q, want one", errs)
+	}
+	if seen := got.all(); len(seen) != 1 {
+		t.Errorf("updates = %+v, want only the block", seen)
+	}
+
+	ada.UnblockBot()
+	if errs := said(func() { ada.Send("back") }); len(errs) != 0 {
+		t.Errorf("after the unblock: errors = %q, want none", errs)
+	}
+	if errs := said(ada.UnblockBot); len(errs) != 1 || !strings.Contains(errs[0], "nothing to unblock") {
+		t.Errorf("unblocking twice: errors = %q, want one", errs)
+	}
+	if seen := got.all(); len(seen) != 3 {
+		t.Errorf("updates = %+v, want the block, the unblock and the message", seen)
+	}
+}
+
+func TestAUserDeletesAMessageWithoutTheBotHearing(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	var got updates
+	got.collect(k)
+	ctx := context.Background()
+
+	ada := k.User(7, Started())
+	ada.Send("mine")
+	card, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: "searching"})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+
+	ada.Delete(ada.History()[1])
+	if seen := got.all(); len(seen) != 1 {
+		t.Errorf("updates = %+v, want nothing for the delete", seen)
+	}
+	if _, err := b.EditMessageText(ctx, &bot.EditMessageTextParams{
+		ChatID: ada.ID(), MessageID: card.ID, Text: "still searching",
+	}); err == nil || !strings.Contains(err.Error(), "message to edit not found") {
+		t.Errorf("editing the deleted card: err = %v, want not found", err)
+	}
+	if _, err := b.DeleteMessage(ctx, &bot.DeleteMessageParams{
+		ChatID: ada.ID(), MessageID: card.ID,
+	}); err == nil || !strings.Contains(err.Error(), "message to delete not found") {
+		t.Errorf("deleting the deleted card: err = %v, want not found", err)
+	}
+	again, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: "searching"})
+	if err != nil {
+		t.Fatalf("sending the card again: %v", err)
+	}
+
+	ada.Delete(ada.History()[0])
+	if history := ada.History(); len(history) != 1 || history[0].ID != again.ID {
+		t.Errorf("history = %+v, want only the card sent again", history)
+	}
+}
+
+func TestAMemberDeletesOnlyWhatTheyMay(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-42, "Standup")
+	ali, bob := k.User(7).In(team), k.User(9).In(team)
+	ali.Send("ali's")
+	bob.Send("bob's")
+	alis, bobs := team.History()[0], team.History()[1]
+	k.User(7).Send("elsewhere")
+	elsewhere := k.User(7).History()[0]
+
+	bob.Delete(alis)
+	bob.Delete(bobs)
+	if history := team.History(); len(history) != 1 || history[0].ID != alis.ID {
+		t.Errorf("history = %+v, want bob's own message gone and ali's kept", history)
+	}
+
+	ali.Promote(k.User(9), DeleteMessages)
+	bob.Delete(elsewhere)
+	bob.Delete(alis)
+	if history := team.History(); len(history) != 0 {
+		t.Errorf("history = %+v, want ali's message gone once bob holds the right", history)
+	}
+	bob.Delete(alis)
+
+	want := []string{"may not delete message 1", "is in chat 7", "has no message 1 to delete"}
+	errs := tb.errors()
+	if len(errs) != len(want) {
+		t.Fatalf("errors = %q, want %d", errs, len(want))
+	}
+	for i := range want {
+		if !strings.Contains(errs[i], want[i]) {
+			t.Errorf("error %d = %q, want it to say %q", i, errs[i], want[i])
+		}
+	}
+}
+
 func syncBot(t *testing.T, k *Kitchen, handler bot.HandlerFunc) *bot.Bot {
 	t.Helper()
 	b, err := bot.New(k.Token(), bot.WithServerURL(k.APIURL()),

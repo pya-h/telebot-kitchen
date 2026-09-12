@@ -50,9 +50,8 @@ func (k *Kitchen) deliver(u models.Update) {
 	defer k.activity.note()
 
 	u.ID = k.world.nextUpdate()
-	// Anything a user does in the bot's private chat means they have opened it.
-	if where, who, _ := about(&u); where != nil && who != nil && where.Type == models.ChatTypePrivate && where.ID == who.ID {
-		k.world.start(who.ID)
+	if id, opened := opener(&u); opened {
+		k.world.start(id)
 	}
 
 	// Released before the bot runs: its own API calls take this lock too.
@@ -101,4 +100,16 @@ func (k *Kitchen) post(handler http.Handler, registered webhook, u models.Update
 	if ctx.Err() != nil {
 		k.tb.Errorf("kitchen: update %d was not accepted within %s, is the bot consuming its webhook?", u.ID, deliveryTimeout)
 	}
+}
+
+func opener(u *models.Update) (int64, bool) {
+	// Blocking or unblocking the bot does not open the chat.
+	if u.MyChatMember != nil {
+		return 0, false
+	}
+	where, who, _ := about(u)
+	if where == nil || who == nil || where.Type != models.ChatTypePrivate || where.ID != who.ID {
+		return 0, false
+	}
+	return who.ID, true
 }

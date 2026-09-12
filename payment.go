@@ -306,6 +306,9 @@ func (m *Member) Pay() (Payment, bool) {
 		k.tb.Errorf("kitchen: %s cannot pay in a channel, where nothing they do becomes a message", m)
 		return Payment{}, false
 	}
+	if m.shutOut() {
+		return Payment{}, false
+	}
 
 	inv, billed := k.payments.newest(m.chat.id)
 	if !billed {

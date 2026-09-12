@@ -181,7 +181,10 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	found, err := k.world.remove(chatID, messageID, k.botUser().ID)
+	botID := k.botUser().ID
+	found, err := k.world.remove(chatID, messageID, func(c *chat, m *models.Message) error {
+		return c.mayDelete(m, botID)
+	})
 	if !found {
 		return nil, requestError("message to delete not found")
 	}

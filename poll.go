@@ -226,12 +226,14 @@ func (m *Member) Vote(options ...string) {
 	m.vote(options)
 }
 
-// RetractVote takes back what the member answered, which reaches the bot as a
-// poll answer naming no option.
+// Reaches the bot as a poll answer naming no option.
 func (m *Member) RetractVote() { m.vote(nil) }
 
 func (m *Member) vote(labels []string) {
 	k := m.kitchen()
+	if m.shutOut() {
+		return
+	}
 
 	poll, asked := k.world.newestPoll(m.chat.id)
 	if !asked {

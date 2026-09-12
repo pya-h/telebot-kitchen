@@ -184,6 +184,14 @@ func (w *world) botPresent(chatID int64) bool {
 	return ok && c.bot.present()
 }
 
+func (w *world) blocked(chatID int64) bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	return ok && c.blocked()
+}
+
 func (w *world) info(chatID int64) (models.Chat, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -578,7 +586,7 @@ func (w *world) edit(chatID int64, messageID int, mutate func(*chat, *models.Mes
 	return handed(m), true, nil
 }
 
-func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, err error) {
+func (w *world) remove(chatID int64, messageID int, may func(*chat, *models.Message) error) (found bool, err error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
@@ -590,7 +598,7 @@ func (w *world) remove(chatID int64, messageID int, botID int64) (found bool, er
 		if m.ID != messageID {
 			continue
 		}
-		if err := c.mayDelete(m, botID); err != nil {
+		if err := may(c, m); err != nil {
 			return true, err
 		}
 		c.messages = slices.Delete(c.messages, i, i+1)

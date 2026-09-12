@@ -35,9 +35,11 @@ func (m *Member) SendCommand(name string, args ...string) {
 	m.Send(text)
 }
 
-// Tap presses an inline button by its visible label or its callback data.
 func (m *Member) Tap(labelOrData string) {
 	k := m.kitchen()
+	if m.shutOut() {
+		return
+	}
 	screens := k.world.keyboards(m.chat.id, k.reach())
 	if len(screens) == 0 {
 		k.tb.Errorf("kitchen: %s has no buttons on screen, so %q cannot be tapped", m, labelOrData)
@@ -168,6 +170,9 @@ func (m *Member) say(msg models.Message) (models.Message, bool) {
 // The whole batch lands before any of it is delivered, so a reply to the first
 // message cannot be stepped over by the id of the last.
 func (m *Member) sayAll(msgs ...models.Message) []models.Message {
+	if m.shutOut() {
+		return nil
+	}
 	if m.chat.kind == models.ChatTypeChannel {
 		m.kitchen().tb.Errorf("kitchen: %s cannot speak, a channel carries posts rather than what its subscribers say", m)
 		return nil
@@ -203,6 +208,9 @@ func (m *Member) String() string {
 // Edit is the member rewording what they said. What the bot edits through the
 // API is its own doing, and comes back to nobody.
 func (m *Member) Edit(sent Message, text string) Message {
+	if m.shutOut() {
+		return Message{}
+	}
 	edited, found, err := m.kitchen().world.edit(m.chat.id, sent.ID, func(_ *chat, msg *models.Message) error {
 		if msg.From == nil || msg.From.ID != m.user.id {
 			return errNotTheirs
@@ -221,6 +229,40 @@ func (m *Member) Edit(sent Message, text string) Message {
 
 	m.kitchen().deliver(models.Update{EditedMessage: &edited})
 	return m.kitchen().view(edited)
+}
+
+// Telegram tells the bot nothing.
+func (m *Member) Delete(sent Message) {
+	k := m.kitchen()
+	if sent.ChatID != m.chat.id {
+		k.tb.Errorf("kitchen: message %d is in chat %d, not where %s is", sent.ID, sent.ChatID, m)
+		return
+	}
+	found, err := k.world.remove(m.chat.id, sent.ID, func(c *chat, msg *models.Message) error {
+		own := msg.From != nil && msg.From.ID == m.user.id
+		if own || c.info.Type == models.ChatTypePrivate {
+			return nil
+		}
+		if s, ok := c.members[m.user.id]; ok && s.may(DeleteMessages) {
+			return nil
+		}
+		return errNotTheirs
+	})
+	switch {
+	case !found:
+		k.tb.Errorf("kitchen: %s has no message %d to delete", m, sent.ID)
+	case err != nil:
+		k.tb.Errorf("kitchen: %s may not delete message %d, which is somebody else's", m, sent.ID)
+	}
+}
+
+func (m *Member) shutOut() bool {
+	k := m.kitchen()
+	if !k.world.blocked(m.chat.id) {
+		return false
+	}
+	k.tb.Errorf("kitchen: %s blocked the bot, so nothing they do in its chat reaches it until UnblockBot", m)
+	return true
 }
 
 // Join announces the arrival that In does not.

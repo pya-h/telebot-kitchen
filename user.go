@@ -110,6 +110,25 @@ func (u *User) In(c *Chat) *Member {
 
 func (u *User) ID() int64 { return u.id }
 
+func (u *User) BlockBot() { u.blocking(models.ChatMemberTypeBanned) }
+
+func (u *User) UnblockBot() { u.blocking(models.ChatMemberTypeMember) }
+
+func (u *User) blocking(to models.ChatMemberType) {
+	k := u.kitchen
+	was, now, chat := k.world.restandBot(u.id, standing{status: to})
+	if was.Type == now.Type {
+		if to == models.ChatMemberTypeBanned {
+			k.tb.Errorf("kitchen: %s has already blocked the bot", u)
+		} else {
+			k.tb.Errorf("kitchen: %s has not blocked the bot, so there is nothing to unblock", u)
+		}
+		return
+	}
+	u.awaitFromNow()
+	k.deliver(models.Update{MyChatMember: u.changed(chat, was, now)})
+}
+
 func (u *User) identity() models.User {
 	u.kitchen.mu.RLock()
 	defer u.kitchen.mu.RUnlock()

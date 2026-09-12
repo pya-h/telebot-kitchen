@@ -141,6 +141,9 @@ func (m *Member) ReactTo(sent Message, emoji ...string) { m.reactTo(sent.ID, emo
 
 func (m *Member) reactTo(messageID int, emoji []string) {
 	k := m.kitchen()
+	if m.shutOut() {
+		return
+	}
 	for _, e := range emoji {
 		if !reactable(e) {
 			k.tb.Errorf("kitchen: Telegram takes no %q as a reaction", e)

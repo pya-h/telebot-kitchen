@@ -251,6 +251,9 @@ func (m *Member) Search(query string) {
 
 func (m *Member) Pick(titleOrID string) {
 	k := m.kitchen()
+	if m.shutOut() {
+		return
+	}
 
 	asked, answered := k.inline.newest(m.chat.id, m.user.id)
 	if !answered {

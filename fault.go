@@ -28,14 +28,8 @@ func TooManyRequests(retryAfter time.Duration) Fault {
 	})
 }
 
-// Blocked is the user shutting the bot out, which a bot only ever learns from
-// the next thing it tries to send them.
-func Blocked() Fault {
-	return refusal(&apiError{
-		Code:        http.StatusForbidden,
-		Description: "Forbidden: bot was blocked by the user",
-	})
-}
+// Blocked refuses only the matched calls; User.BlockBot is the lasting block.
+func Blocked() Fault { return refusal(errBlocked) }
 
 func ServerError() Fault {
 	return refusal(&apiError{Code: http.StatusInternalServerError, Description: "Internal Server Error"})
@@ -45,8 +39,6 @@ func refusal(e *apiError) Fault {
 	return Fault{e.Error(), func(w http.ResponseWriter) { writeError(w, e) }}
 }
 
-// Malformed answers with a body no client can decode, the way a proxy that
-// truncates a reply does.
 func Malformed() Fault {
 	return Fault{"kitchen: a malformed reply", func(w http.ResponseWriter) {
 		w.Header().Set("Content-Type", "application/json")
@@ -67,13 +59,10 @@ func (k *Kitchen) Fail(f Fault, ms ...Matcher) *Failure {
 	return k.faults.add(&Failure{fault: f, when: All(ms...), left: -1})
 }
 
-// FailOnce refuses a single call, the shape of a fault a retry recovers from.
 func (k *Kitchen) FailOnce(f Fault, ms ...Matcher) *Failure {
 	return k.faults.add(&Failure{fault: f, when: All(ms...), left: 1})
 }
 
-// FailAfter lets n matching calls through and refuses the rest, for a bot that
-// breaks only once it is already mid-conversation.
 func (k *Kitchen) FailAfter(n int, f Fault, ms ...Matcher) *Failure {
 	return k.faults.add(&Failure{fault: f, when: All(ms...), skip: n, left: -1})
 }
@@ -91,7 +80,6 @@ type Failure struct {
 	gone bool
 }
 
-// Clear takes the fault down, so the calls it was refusing go through again.
 func (f *Failure) Clear() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

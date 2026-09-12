@@ -79,6 +79,13 @@ ada := k.User(101, kitchen.Started())
 One exception, as on Telegram: for five minutes of the kitchen's clock after
 somebody asks to join a chat, and until the bot answers, it may write to them.
 
+Only the user closes the chat, too. `ada.BlockBot()` hands the bot
+`my_chat_member`, its standing going from `member` to `kicked`, and from then on
+every send, edit or copy there is `403 Forbidden: bot was blocked by the user`.
+`ada.UnblockBot()` turns both back. Neither one opens the chat; a client's
+*Restart* also sends `/start`, which the test sends itself. Anything the user does
+in a chat where they blocked the bot is a test error.
+
 | verb | what it does |
 | --- | --- |
 | `Send(text)` | a text message, with command entities parsed as Telegram parses them |
@@ -97,6 +104,7 @@ somebody asks to join a chat, and until the bot answers, it may write to them.
 | `RetractVote()` | takes that answer back |
 | `React(emoji...)` | reacts to the newest message; nothing given clears it |
 | `ReactTo(sent, emoji...)` | the same, on a message the test is holding |
+| `Delete(sent)` | deletes a message for everybody, which Telegram tells the bot nothing about |
 | `AskToJoin(bio...)` | knocks on a chat that admits people by approval |
 | `Boost()` / `Unboost()` | puts a premium boost behind a chat, or takes it back |
 | `Search(query)` | types the bot's name and a query, which is an inline query |
@@ -441,6 +449,11 @@ roster the moment they say something.
 `ada.In(team).Edit(sent, "what I meant")` is the same idea for a message: the
 member rewording what they said, which the bot hears as `edited_message`. Only
 their own message is theirs to edit.
+
+`Delete(sent)` takes a message away for everybody, and the bot hears nothing: it
+finds out when it next edits or deletes the message and is told `message to edit
+not found`. In a private chat either side's message goes. In a group it has to be
+the member's own, unless they were promoted with `DeleteMessages`.
 
 ### Rights, and the failures that come with them
 
@@ -860,9 +873,9 @@ func TestAFloodWaitCostsTheMenu(t *testing.T) {
 }
 ```
 
-The faults are `TooManyRequests(retryAfter)`, `Blocked()` — the user shutting
-the bot out, which it only ever learns from the next thing it sends —
-`ServerError()`, `Malformed()`, a reply no client can decode, and `Timeout()`,
+The faults are `TooManyRequests(retryAfter)`, `Blocked()` — the refusal a
+blocked user causes, on the matched calls only, where `BlockBot` is the lasting
+kind — `ServerError()`, `Malformed()`, a reply no client can decode, and `Timeout()`,
 which drops the connection rather than holding it open, so the test meets the
 failure at once instead of waiting out the bot's own client timeout.
 
