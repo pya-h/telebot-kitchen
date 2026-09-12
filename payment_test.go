@@ -3,6 +3,7 @@ package kitchen
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -386,5 +387,72 @@ func TestNobodyPaysInAChannel(t *testing.T) {
 	}
 	if ledger := k.Payments(); len(ledger) != 0 {
 		t.Errorf("ledger = %v, want it empty", ledger)
+	}
+}
+
+func TestAStarsInvoiceIsTheOneShapeTelegramTakes(t *testing.T) {
+	k := talking(t)
+	full := map[string]string{
+		"chat_id": fmt.Sprint(testChatID), "title": "Boost", "description": "d",
+		"payload": boost, "currency": "XTR", "prices": `[{"label":"Boost","amount":100}]`,
+	}
+	wrong := []struct {
+		name    string
+		field   string
+		value   string
+		refused string
+	}{
+		{"a provider behind Stars", "provider_token", "tok", "provider_token must be empty"},
+		{"a price broken down", "prices", `[{"label":"Boost","amount":60},{"label":"Tax","amount":40}]`, "exactly one item"},
+		{"nothing to charge", "prices", `[{"label":"Boost","amount":0}]`, "amount must be positive"},
+	}
+	for _, one := range wrong {
+		asked := map[string]string{"reply_markup": `{"keyboard":[["Pay"]]}`}
+		for name, value := range full {
+			asked[name] = value
+		}
+		asked[one.field] = one.value
+
+		reply := callForm(t, k, "sendInvoice", asked)
+		if reply.OK || reply.ErrorCode != http.StatusBadRequest || !strings.Contains(reply.Description, one.refused) {
+			t.Errorf("%s = %+v, want a refusal saying %q", one.name, reply, one.refused)
+		}
+	}
+	if log := k.History(testChatID); len(log) != 0 {
+		t.Errorf("chat holds %+v, want no invoice from a refused call", log)
+	}
+	if menu := k.User(testChatID).Menu(); len(menu) != 0 {
+		t.Errorf("menu = %v, want a refused invoice to have raised no keyboard", menu)
+	}
+
+	// The flags Telegram ignores for Stars are taken rather than refused.
+	full["need_name"], full["need_email"], full["need_phone_number"] = "true", "true", "true"
+	if reply := callForm(t, k, "sendInvoice", full); !reply.OK {
+		t.Fatalf("reply = %+v, want the one shape Telegram takes accepted", reply)
+	}
+
+	b, _ := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
+	paid, ok := k.User(testChatID).Pay()
+	if !ok || paid.Amount != 100 || paid.Currency != "XTR" {
+		t.Errorf("paid = %+v, %v; want the invoice paid as before", paid, ok)
+	}
+}
+
+// A currency with a provider behind it is not held to the Stars rules.
+func TestAnInvoiceInAnotherCurrencyKeepsItsBreakdown(t *testing.T) {
+	k := talking(t)
+	reply := callForm(t, k, "sendInvoice", map[string]string{
+		"chat_id": fmt.Sprint(testChatID), "title": "Boost", "description": "d",
+		"payload": boost, "currency": "EUR", "provider_token": "tok",
+		"prices": `[{"label":"Boost","amount":900},{"label":"VAT","amount":100}]`,
+	})
+	if !reply.OK {
+		t.Fatalf("reply = %+v, want it accepted", reply)
+	}
+	var sent models.Message
+	reply.decode(t, &sent)
+	if sent.Invoice == nil || sent.Invoice.TotalAmount != 1000 {
+		t.Errorf("invoice = %+v, want the prices summed", sent.Invoice)
 	}
 }

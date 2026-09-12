@@ -7,6 +7,9 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
+// The currency Telegram charges itself, rather than through a provider.
+const stars = "XTR"
+
 // Payment is a Stars charge that went through, and whether the bot has since
 // given it back. A grant a refund should revoke is tested against Refunded.
 type Payment struct {
@@ -19,8 +22,7 @@ type Payment struct {
 	Refunded bool
 }
 
-// invoice is what a bot asked for. Telegram's Invoice object carries no
-// payload, so the kitchen keeps its own record of what a message would charge.
+// What a bot asked for. Telegram's Invoice object carries no payload
 type invoice struct {
 	chatID   int64
 	payload  string
@@ -226,6 +228,11 @@ func (k *Kitchen) sendInvoice(p params) (any, error) {
 	if err := p.decode("prices", &prices); err != nil || len(prices) == 0 {
 		return nil, badRequest("prices")
 	}
+	if p["currency"] == stars {
+		if err := starPriced(p["provider_token"], prices); err != nil {
+			return nil, err
+		}
+	}
 	markup, err := k.accept(p, chatID)
 	if err != nil {
 		return nil, err
@@ -250,6 +257,20 @@ func (k *Kitchen) sendInvoice(p params) (any, error) {
 		chatID: chatID, payload: p["payload"], currency: p["currency"], amount: amount,
 	})
 	return sent, nil
+}
+
+// Stars are charged by Telegram itself, so there is no provider behind them and
+// nothing to break the amount down into.
+func starPriced(providerToken string, prices []models.LabeledPrice) error {
+	switch {
+	case providerToken != "":
+		return requestError("provider_token must be empty for payments in Telegram Stars")
+	case len(prices) != 1:
+		return requestError("prices must contain exactly one item for payments in Telegram Stars")
+	case prices[0].Amount < 1:
+		return requestError("price amount must be positive")
+	}
+	return nil
 }
 
 func (k *Kitchen) answerPreCheckoutQuery(p params) (any, error) {

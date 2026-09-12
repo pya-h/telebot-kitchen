@@ -31,6 +31,11 @@ func TooManyRequests(retryAfter time.Duration) Fault {
 // Blocked refuses only the matched calls; User.BlockBot is the lasting block.
 func Blocked() Fault { return refusal(errBlocked) }
 
+// Refuse is any refusal the kitchen does not model itself, in Telegram's envelope.
+func Refuse(code int, description string) Fault {
+	return refusal(&apiError{Code: code, Description: description})
+}
+
 func ServerError() Fault {
 	return refusal(&apiError{Code: http.StatusInternalServerError, Description: "Internal Server Error"})
 }

@@ -2,6 +2,8 @@ package kitchen
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -136,4 +138,35 @@ func TestABotRecoversFromAFloodWait(t *testing.T) {
 	user.Send("go")
 	user.Expect(TextIs("hi"))
 	k.ExpectCount(2, Method("sendMessage"))
+}
+
+// Refuse stands in for every refusal the kitchen does not model itself.
+func TestARefusalTheKitchenDoesNotModel(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+	k.FailOnce(Refuse(http.StatusBadRequest, "Bad Request: PAYMENT_PROVIDER_INVALID"), Method("sendInvoice"))
+
+	invoice := &bot.SendInvoiceParams{
+		ChatID: testChatID, Title: "Boost", Description: "d", Payload: "boost:30d",
+		Currency: "XTR", Prices: []models.LabeledPrice{{Label: "Boost", Amount: 100}},
+	}
+	_, err := b.SendInvoice(context.Background(), invoice)
+	if err == nil || !strings.Contains(err.Error(), "PAYMENT_PROVIDER_INVALID") {
+		t.Errorf("err = %v, want the refusal the fault named", err)
+	}
+	if log := k.History(testChatID); len(log) != 0 {
+		t.Errorf("chat holds %+v, want the refused invoice to have left nothing", log)
+	}
+
+	if _, err := b.SendInvoice(context.Background(), invoice); err != nil {
+		t.Errorf("the next call: %v, want it through", err)
+	}
+
+	// Any code, not only the ones the kitchen refuses with itself.
+	k.Fail(Refuse(http.StatusPaymentRequired, "Payment Required: BALANCE_TOO_LOW"), Method("sendMessage"))
+	reply := callForm(t, k, "sendMessage", map[string]string{"chat_id": fmt.Sprint(testChatID), "text": "hi"})
+	if reply.OK || reply.status != http.StatusPaymentRequired || reply.ErrorCode != http.StatusPaymentRequired ||
+		!strings.Contains(reply.Description, "BALANCE_TOO_LOW") {
+		t.Errorf("reply = %+v, want the code and the description the fault named", reply)
+	}
 }

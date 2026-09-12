@@ -911,6 +911,12 @@ as no update, the same rule its own message, edit and pin follow. The Stars
 ledger reads back through `getStarTransactions`, newest first, with a refund as
 a line of its own going the other way.
 
+An invoice in `XTR` is held to the shape Telegram takes: no `provider_token`,
+exactly one price, and an amount of at least one star. Anything else is a `400`
+that leaves no invoice in the chat and raises no keyboard. The `need_*` flags are
+taken and ignored, as Telegram ignores them for Stars, and an invoice in another
+currency keeps its provider and its breakdown.
+
 ## Fault injection
 
 Make the fake API refuse a call, and watch what the bot does about it:
@@ -932,7 +938,8 @@ func TestAFloodWaitCostsTheMenu(t *testing.T) {
 
 The faults are `TooManyRequests(retryAfter)`, `Blocked()` — the refusal a
 blocked user causes, on the matched calls only, where `BlockBot` is the lasting
-kind — `ServerError()`, `Malformed()`, a reply no client can decode, and `Timeout()`,
+kind — `ServerError()`, `Refuse(code, description)` for any refusal the kitchen
+does not model itself, `Malformed()`, a reply no client can decode, and `Timeout()`,
 which drops the connection rather than holding it open, so the test meets the
 failure at once instead of waiting out the bot's own client timeout.
 
