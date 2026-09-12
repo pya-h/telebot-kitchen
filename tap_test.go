@@ -10,7 +10,6 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// menuBot answers text with a keyboard and echoes back whatever button is tapped.
 func tapping(data string) *models.InlineKeyboardMarkup {
 	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{{Text: "Go", CallbackData: data}}}}
 }
@@ -27,8 +26,8 @@ func TestCallbackDataIsMeasuredInBytes(t *testing.T) {
 	}{
 		{"at the limit", strings.Repeat("a", mostCallbackData), true},
 		{"one over", strings.Repeat("a", mostCallbackData+1), false},
-		{"32 Persian letters", strings.Repeat("س", mostCallbackData/2), true},
-		{"33 Persian letters", strings.Repeat("س", mostCallbackData/2+1), false},
+		{"32 two-byte letters", strings.Repeat("é", mostCallbackData/2), true},
+		{"33 two-byte letters", strings.Repeat("é", mostCallbackData/2+1), false},
 	} {
 		_, err := b.SendMessage(ctx, &bot.SendMessageParams{ChatID: ada.ID(), Text: c.name, ReplyMarkup: tapping(c.data)})
 		if fits := err == nil; fits != c.fits {
@@ -79,7 +78,7 @@ func TestAnAnswerToATapHoldsTwoHundredCharacters(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: "1", Text: strings.Repeat("س", mostAnswer),
+		CallbackQueryID: "1", Text: strings.Repeat("é", mostAnswer),
 	}); err != nil {
 		t.Errorf("at the limit: %v", err)
 	}
@@ -112,7 +111,7 @@ func menuBot(t *testing.T, k *Kitchen, rows ...[]models.InlineKeyboardButton) *b
 
 var languageMenu = [][]models.InlineKeyboardButton{{
 	{Text: "English", CallbackData: "lang:en"},
-	{Text: "فارسی", CallbackData: "lang:fa"},
+	{Text: "German", CallbackData: "lang:de"},
 }}
 
 func TestTapByLabel(t *testing.T) {
@@ -121,9 +120,9 @@ func TestTapByLabel(t *testing.T) {
 
 	user := k.User(7)
 	user.Send("hi")
-	user.Tap("فارسی")
+	user.Tap("German")
 
-	if reply, ok := k.world.latest(user.ChatID()); !ok || reply.Text != "tapped: lang:fa" {
+	if reply, ok := k.world.latest(user.ChatID()); !ok || reply.Text != "tapped: lang:de" {
 		t.Errorf("reply = %+v, want the callback data behind the label", reply)
 	}
 }

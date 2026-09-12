@@ -13,8 +13,8 @@ func TestUserTextReachesTheBot(t *testing.T) {
 	k := New(t)
 	k.DeliverTo(syncBot(t, k, echoHandler).ProcessUpdate)
 
-	user := k.User(7, WithFullName("Ali", "Rezaei"), WithUsername("ali"), WithLanguage("fa"))
-	user.Send("سلام")
+	user := k.User(7, WithFullName("Ada", "Lovelace"), WithUsername("ada"), WithLanguage("de"))
+	user.Send("hello")
 
 	log := k.world.history(user.ChatID())
 	if len(log) != 2 {
@@ -22,16 +22,16 @@ func TestUserTextReachesTheBot(t *testing.T) {
 	}
 
 	sent := log[0]
-	if sent.Text != "سلام" || sent.From == nil || sent.From.Username != "ali" {
+	if sent.Text != "hello" || sent.From == nil || sent.From.Username != "ada" {
 		t.Errorf("sent = %+v, want the user's own message", sent)
 	}
-	if sent.From.LanguageCode != "fa" {
+	if sent.From.LanguageCode != "de" {
 		t.Errorf("language = %q, want the configured one", sent.From.LanguageCode)
 	}
-	if sent.Chat.ID != 7 || sent.Chat.FirstName != "Ali" || sent.Chat.Username != "ali" {
+	if sent.Chat.ID != 7 || sent.Chat.FirstName != "Ada" || sent.Chat.Username != "ada" {
 		t.Errorf("chat = %+v, want the user's private chat", sent.Chat)
 	}
-	if log[1].Text != "echo: سلام" {
+	if log[1].Text != "echo: hello" {
 		t.Errorf("reply = %q, want the echo", log[1].Text)
 	}
 }
@@ -41,9 +41,9 @@ func TestSendCommandCarriesEntity(t *testing.T) {
 	var got *models.Message
 	k.DeliverTo(func(_ context.Context, u *models.Update) { got = u.Message })
 
-	k.User(7).SendCommand("settings", "lang", "fa")
+	k.User(7).SendCommand("settings", "lang", "de")
 
-	if got.Text != "/settings lang fa" {
+	if got.Text != "/settings lang de" {
 		t.Fatalf("text = %q, want the command with its arguments", got.Text)
 	}
 	want := models.MessageEntity{Type: models.MessageEntityTypeBotCommand, Offset: 0, Length: 9}
@@ -90,7 +90,7 @@ func TestTypedCommandIsRecognized(t *testing.T) {
 func TestEntityLengthCountsUTF16(t *testing.T) {
 	cases := map[string]int{
 		"/start": 6,
-		"/شروع":  5,
+		"/café":  5,
 		"/👍":     3,
 	}
 	for text, want := range cases {
@@ -102,10 +102,10 @@ func TestEntityLengthCountsUTF16(t *testing.T) {
 
 func TestUserOptionsAreAdditive(t *testing.T) {
 	k := New(t)
-	k.User(7, WithUsername("ali"))
-	again := k.User(7, WithLanguage("fa"))
+	k.User(7, WithUsername("ada"))
+	again := k.User(7, WithLanguage("de"))
 
-	if again.info.Username != "ali" || again.info.LanguageCode != "fa" {
+	if again.info.Username != "ada" || again.info.LanguageCode != "de" {
 		t.Errorf("user = %+v, want both settings kept", again.info)
 	}
 	if first := k.User(7); first != again {
@@ -313,26 +313,26 @@ func TestAMemberDeletesOnlyWhatTheyMay(t *testing.T) {
 	k := New(tb)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 	team := k.Group(-42, "Standup")
-	ali, bob := k.User(7).In(team), k.User(9).In(team)
-	ali.Send("ali's")
+	alan, bob := k.User(7).In(team), k.User(9).In(team)
+	alan.Send("alan's")
 	bob.Send("bob's")
-	alis, bobs := team.History()[0], team.History()[1]
+	alans, bobs := team.History()[0], team.History()[1]
 	k.User(7).Send("elsewhere")
 	elsewhere := k.User(7).History()[0]
 
-	bob.Delete(alis)
+	bob.Delete(alans)
 	bob.Delete(bobs)
-	if history := team.History(); len(history) != 1 || history[0].ID != alis.ID {
-		t.Errorf("history = %+v, want bob's own message gone and ali's kept", history)
+	if history := team.History(); len(history) != 1 || history[0].ID != alans.ID {
+		t.Errorf("history = %+v, want bob's own message gone and alan's kept", history)
 	}
 
-	ali.Promote(k.User(9), DeleteMessages)
+	alan.Promote(k.User(9), DeleteMessages)
 	bob.Delete(elsewhere)
-	bob.Delete(alis)
+	bob.Delete(alans)
 	if history := team.History(); len(history) != 0 {
-		t.Errorf("history = %+v, want ali's message gone once bob holds the right", history)
+		t.Errorf("history = %+v, want alan's message gone once bob holds the right", history)
 	}
-	bob.Delete(alis)
+	bob.Delete(alans)
 
 	want := []string{"may not delete message 1", "is in chat 7", "has no message 1 to delete"}
 	errs := tb.errors()

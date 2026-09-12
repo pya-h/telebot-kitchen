@@ -97,7 +97,7 @@ func TestUserExpectReadsTheReply(t *testing.T) {
 
 	user := k.User(7)
 	user.Send("hi")
-	user.Expect(TextIs("menu"), HasButton("lang:fa"), ToUser(user))
+	user.Expect(TextIs("menu"), HasButton("lang:de"), ToUser(user))
 
 	user.Tap("English")
 	user.Expect(TextContains("lang:en"))
@@ -115,7 +115,7 @@ func TestUserExpectReportsTheMismatch(t *testing.T) {
 	user.Expect(HasButton("Deutsch"))
 
 	errs := tb.errors()
-	if len(errs) != 1 || !strings.Contains(errs[0], "menu\n[English] [⁨فارسی⁩]") {
+	if len(errs) != 1 || !strings.Contains(errs[0], "menu\n[English] [German]") {
 		t.Errorf("errors = %v, want the screen the user actually had", errs)
 	}
 }

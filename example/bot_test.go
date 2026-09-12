@@ -41,7 +41,7 @@ func TestSettingsFlow(t *testing.T) {
 			ada.Expect(
 				kitchen.TextContains("Pick a language"),
 				kitchen.HasButton("English"),
-				kitchen.HasButton("lang:fa"),
+				kitchen.HasButton("lang:de"),
 			)
 		}},
 		kitchen.Step{Name: "pick a language", Do: func() {
@@ -78,8 +78,8 @@ func TestSettingsAreKeptPerUser(t *testing.T) {
 		user.Expect(kitchen.HasButton("English"))
 	}
 
-	ada.Tap("فارسی")
-	ada.ExpectScreen(kitchen.TextContains("فارسی"))
+	ada.Tap("German")
+	ada.ExpectScreen(kitchen.TextContains("German"))
 
 	grace.Tap("English")
 	grace.ExpectScreen(kitchen.TextContains("English"))
@@ -87,7 +87,7 @@ func TestSettingsAreKeptPerUser(t *testing.T) {
 	// Ada acts last, so a setting leaking between chats would surface as Grace's
 	// language on Ada's screen.
 	ada.Tap("Turn notifications on")
-	ada.ExpectScreen(kitchen.TextIs("Settings: فارسی, notifications on"))
+	ada.ExpectScreen(kitchen.TextIs("Settings: German, notifications on"))
 
 	k.ExpectCount(1, kitchen.Method("editMessageText"), kitchen.ToUser(grace))
 }

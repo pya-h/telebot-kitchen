@@ -16,8 +16,7 @@ func TestMessageRendersTextAndKeyboard(t *testing.T) {
 	user := k.User(7, WithFullName("Ada", "Lovelace"))
 	user.Send("hi")
 
-	// The Persian label is fenced off, or it would take the brackets with it.
-	if got := user.Screen().String(); got != "menu\n[English] [⁨فارسی⁩]" {
+	if got := user.Screen().String(); got != "menu\n[English] [German]" {
 		t.Errorf("screen =\n%s\nwant the text above its keyboard", got)
 	}
 }
@@ -52,7 +51,7 @@ func TestTranscriptReadsAsAConversation(t *testing.T) {
 
 	want := strings.Join([]string{
 		"**Ada Lovelace:** hi",
-		"**Concierge:** menu\n[English] [⁨فارسی⁩]",
+		"**Concierge:** menu\n[English] [German]",
 		"**Concierge:** tapped: lang:en",
 	}, "\n\n") + "\n"
 
@@ -109,17 +108,17 @@ func TestAPlaceholderSaysWhatItCarries(t *testing.T) {
 	}
 }
 
-// A reply that runs the other way would otherwise take the frame around it with
-// it, and the buttons would read back to front.
 func TestATranscriptKeepsItsShapeAroundRightToLeftText(t *testing.T) {
-	k := New(t, WithBotName("پذیرش"))
+	// Letters of a right-to-left script, as escapes so the file stays ASCII.
+	const desk, first, last, said = "\u05d0\u05d1", "\u05d2\u05d3", "\u05d4\u05d5", "\u05d6\u05d7"
+	k := New(t, WithBotName(desk))
 	k.DeliverTo(func(context.Context, *models.Update) {})
-	ada := k.User(7, WithFullName("آدا", "لاولیس"))
+	ada := k.User(7, WithFullName(first, last))
 
-	ada.Send("سلام")
+	ada.Send(said)
 	got := ada.Transcript()
 
-	want := "**⁨آدا لاولیس⁩:** ⁨سلام⁩\n"
+	want := "**\u2068" + first + " " + last + "\u2069:** \u2068" + said + "\u2069\n"
 	if got != want {
 		t.Errorf("transcript = %q, want the name and the reply each fenced off", got)
 	}

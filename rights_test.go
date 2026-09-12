@@ -15,9 +15,9 @@ func TestAMemberRewordingWhatTheySaidIsAnEdit(t *testing.T) {
 	got.collect(k)
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("half nine")
-	ali.Edit(team.History()[0], "half ten")
+	alan := k.User(7).In(team)
+	alan.Send("half nine")
+	alan.Edit(team.History()[0], "half ten")
 
 	seen := got.all()
 	if len(seen) != 2 || seen[1].EditedMessage == nil {
@@ -39,10 +39,10 @@ func TestOnlyYourOwnMessageIsYoursToEdit(t *testing.T) {
 	k.DeliverTo(syncBot(t, k, echoHandler).ProcessUpdate)
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("hello")
-	reply := ali.Expect(TextIs("echo: hello"))
-	ali.Edit(reply, "something else")
+	alan := k.User(7).In(team)
+	alan.Send("hello")
+	reply := alan.Expect(TextIs("echo: hello"))
+	alan.Edit(reply, "something else")
 
 	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "not user 7 in \"Standup\"'s to edit") {
 		t.Errorf("errors = %v, want one about editing the bot's message", errs)
@@ -75,16 +75,16 @@ func TestPinningNeedsTheRightAndIsWrittenInTheChat(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("read this")
+	alan := k.User(7).In(team)
+	alan.Send("read this")
 	pin := map[string]string{"chat_id": "-42", "message_id": fmt.Sprint(team.History()[0].ID)}
 
-	ali.PromoteBot(PostMessages)
+	alan.PromoteBot(PostMessages)
 	if reply := callForm(t, k, "pinChatMessage", pin); reply.OK || !strings.Contains(reply.Description, "not enough rights to pin") {
 		t.Fatalf("reply = %+v, want the refusal without the right", reply)
 	}
 
-	ali.PromoteBot(PinMessages)
+	alan.PromoteBot(PinMessages)
 	if reply := callForm(t, k, "pinChatMessage", pin); !reply.OK {
 		t.Fatalf("reply = %+v, want the pin allowed", reply)
 	}
@@ -111,8 +111,8 @@ func TestARestrictedMemberIsNotHeard(t *testing.T) {
 	k := New(tb)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("first")
+	alan := k.User(7).In(team)
+	alan.Send("first")
 
 	reply := callForm(t, k, "restrictChatMember", map[string]string{
 		"chat_id": "-42", "user_id": "7", "permissions": `{"can_send_messages":false}`,
@@ -121,7 +121,7 @@ func TestARestrictedMemberIsNotHeard(t *testing.T) {
 		t.Fatalf("reply = %+v, want the restriction applied", reply)
 	}
 
-	ali.Send("second")
+	alan.Send("second")
 	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "restricted") {
 		t.Fatalf("errors = %v, want one about the restriction", errs)
 	}
@@ -138,9 +138,9 @@ func TestManagingMembersNeedsTheRight(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("here")
-	ali.PromoteBot(PostMessages)
+	alan := k.User(7).In(team)
+	alan.Send("here")
+	alan.PromoteBot(PostMessages)
 
 	cases := map[string]map[string]string{
 		"banChatMember":      {"chat_id": "-42", "user_id": "7"},
@@ -153,7 +153,7 @@ func TestManagingMembersNeedsTheRight(t *testing.T) {
 		}
 	}
 
-	ali.PromoteBot(RestrictMembers, PromoteMembers)
+	alan.PromoteBot(RestrictMembers, PromoteMembers)
 	callForm(t, k, "promoteChatMember", cases["promoteChatMember"])
 	member := chatMemberOf(t, k, -42, 7)
 	if member.Type != models.ChatMemberTypeAdministrator || !member.Administrator.CanPinMessages || member.Administrator.CanDeleteMessages {
@@ -188,9 +188,9 @@ func TestRestrictingSomebodyWhoLeftDoesNotPutThemBack(t *testing.T) {
 	k := New(t)
 	k.DeliverTo(func(context.Context, *models.Update) {})
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Join()
-	ali.Leave()
+	alan := k.User(7).In(team)
+	alan.Join()
+	alan.Leave()
 
 	callForm(t, k, "restrictChatMember", map[string]string{
 		"chat_id": "-42", "user_id": "7", "permissions": `{"can_send_messages":false}`,
@@ -289,9 +289,9 @@ func TestDeletingAPinnedMessageTakesTheOneBefore(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("first")
-	ali.Send("second")
+	alan := k.User(7).In(team)
+	alan.Send("first")
+	alan.Send("second")
 
 	said := team.History()
 	for _, m := range said {
@@ -333,11 +333,11 @@ func TestAPinIsNotAReplyToRead(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("read this")
+	alan := k.User(7).In(team)
+	alan.Send("read this")
 	callForm(t, k, "pinChatMessage", map[string]string{
 		"chat_id": "-42", "message_id": fmt.Sprint(team.History()[0].ID),
 	})
 
-	ali.ExpectNothingMore()
+	alan.ExpectNothingMore()
 }

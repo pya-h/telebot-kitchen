@@ -17,10 +17,10 @@ func TestScreenShowsTheNewestMessage(t *testing.T) {
 	if screen.Text != "menu" || !screen.FromBot {
 		t.Errorf("screen = %+v, want the bot's menu", screen)
 	}
-	if !screen.HasButton("English") || !screen.HasButton("lang:fa") {
+	if !screen.HasButton("English") || !screen.HasButton("lang:de") {
 		t.Errorf("buttons = %+v, want both by label and by data", screen.Buttons())
 	}
-	if button, ok := screen.Button("فارسی"); !ok || button.Data != "lang:fa" {
+	if button, ok := screen.Button("German"); !ok || button.Data != "lang:de" {
 		t.Errorf("button = %+v, %v; want the data behind the label", button, ok)
 	}
 	if screen.Sent != k.Clock().Now() {

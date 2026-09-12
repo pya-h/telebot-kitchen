@@ -83,8 +83,8 @@ func TestDeletingSomebodyElsesMessageNeedsTheRight(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("mine")
+	alan := k.User(7).In(team)
+	alan.Send("mine")
 	k.User(9).In(team).PromoteBot(PinMessages)
 
 	theirs := fmt.Sprint(team.History()[0].ID)
@@ -105,9 +105,9 @@ func TestABotAlwaysDeletesItsOwn(t *testing.T) {
 	k.DeliverTo(syncBot(t, k, echoHandler).ProcessUpdate)
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("hello")
-	reply := ali.Expect(TextIs("echo: hello"))
+	alan := k.User(7).In(team)
+	alan.Send("hello")
+	reply := alan.Expect(TextIs("echo: hello"))
 	k.User(9).In(team).PromoteBot(PinMessages)
 
 	got := callForm(t, k, "deleteMessage", map[string]string{
@@ -151,26 +151,26 @@ func TestJoiningIsNewsAndBeingThereIsNot(t *testing.T) {
 	got.collect(k)
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7, WithFullName("Ali", "Rezaei")).In(team)
+	ada := k.User(7, WithFullName("Ada", "Lovelace")).In(team)
 	if seen := got.all(); len(seen) != 0 {
 		t.Fatalf("updates = %+v, want nothing from placing a member", seen)
 	}
 
-	ali.Join()
+	ada.Join()
 
 	seen := got.all()
 	if len(seen) != 2 {
 		t.Fatalf("updates = %+v, want the service message and the membership change", seen)
 	}
 	if len(seen[0].Message.NewChatMembers) != 1 || seen[0].Message.NewChatMembers[0].ID != 7 {
-		t.Errorf("service message = %+v, want Ali joining", seen[0].Message)
+		t.Errorf("service message = %+v, want the arrival", seen[0].Message)
 	}
 	changed := seen[1].ChatMember
 	if changed == nil || changed.OldChatMember.Type != models.ChatMemberTypeLeft ||
 		changed.NewChatMember.Type != models.ChatMemberTypeMember || changed.From.ID != 7 {
-		t.Errorf("chat_member = %+v, want Ali going from outside to in", changed)
+		t.Errorf("chat_member = %+v, want the member going from outside to in", changed)
 	}
-	if got := team.Transcript(); got != "**Ali Rezaei:** (joined)\n" {
+	if got := team.Transcript(); got != "**Ada Lovelace:** (joined)\n" {
 		t.Errorf("transcript = %q, want the join as a chat records it", got)
 	}
 }
@@ -181,8 +181,8 @@ func TestLeavingTakesAMemberOffTheRoster(t *testing.T) {
 	got.collect(k)
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Leave()
+	alan := k.User(7).In(team)
+	alan.Leave()
 
 	seen := got.all()
 	if len(seen) != 2 || seen[0].Message.LeftChatMember == nil || seen[1].ChatMember.NewChatMember.Type != models.ChatMemberTypeLeft {
@@ -209,7 +209,7 @@ func TestTheBotHearsItsOwnStandingChange(t *testing.T) {
 	changed := seen[0].MyChatMember
 	if changed.OldChatMember.Type != models.ChatMemberTypeAdministrator ||
 		changed.NewChatMember.Type != models.ChatMemberTypeBanned || changed.From.ID != 7 {
-		t.Errorf("my_chat_member = %+v, want the bot kicked by Ali", changed)
+		t.Errorf("my_chat_member = %+v, want the bot kicked by the member", changed)
 	}
 }
 
@@ -238,14 +238,14 @@ func TestTheBotStopsCountingOnceItIsOut(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Send("morning")
+	alan := k.User(7).In(team)
+	alan.Send("morning")
 
 	if got := memberCountOf(t, k, team.ID()); got != 2 {
 		t.Errorf("count = %d, want the member and the bot", got)
 	}
 
-	ali.RemoveBot()
+	alan.RemoveBot()
 	if got := memberCountOf(t, k, team.ID()); got != 1 {
 		t.Errorf("count = %d, want only the member left", got)
 	}

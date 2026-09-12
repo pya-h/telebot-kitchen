@@ -151,7 +151,7 @@ than a timeout. Passing callback data instead of a label survives translation:
 ada.Expect(
 	kitchen.TextContains("Pick a language"),
 	kitchen.HasButton("English"),
-	kitchen.HasButton("lang:fa"),
+	kitchen.HasButton("lang:de"),
 )
 ```
 
@@ -599,7 +599,7 @@ ada.Screen().Entities
 ```
 
 Spans are measured the way Telegram measures them, in UTF-16 code units, so an
-emoji ahead of a Persian word still finds the word. Entities the bot describes
+emoji ahead of a word still finds the word. Entities the bot describes
 outright win over a parse mode, as they do live, and markup the kitchen cannot
 read is refused the way Telegram refuses it — an unclosed `*`, a crossing pair,
 a tag Telegram has no meaning for.
@@ -607,8 +607,8 @@ a tag Telegram has no meaning for.
 Length is counted the same way, once the markup is off, so `*bold*` costs four: a
 message's text holds 4096 (`message is too long`) and a caption 1024 (`message
 caption is too long`). A button's `callback_data` is 1 to 64 **bytes** — 32
-Persian letters — or `BUTTON_DATA_INVALID`, and `answerCallbackQuery` text stops
-at 200.
+letters where each costs two — or `BUTTON_DATA_INVALID`, and
+`answerCallbackQuery` text stops at 200.
 
 `MarkdownV2` and `Markdown` cover bold, italic, underline, strikethrough,
 spoiler, code, code blocks and links; `HTML` covers those and `<blockquote>`.
@@ -643,7 +643,7 @@ Every assertion reports what it found against what it wanted, rendered:
 ```
 kitchen: user 7 was told:
 menu
-[English] [فارسی]
+[English] [German]
 want button "Deutsch"
 ```
 
@@ -714,7 +714,7 @@ k.Scenario(
 		ada.Expect(
 			kitchen.TextContains("Pick a language"),
 			kitchen.HasButton("English"),
-			kitchen.HasButton("lang:fa"),
+			kitchen.HasButton("lang:de"),
 		)
 	}},
 	kitchen.Step{Name: "pick a language", Do: func() {
@@ -756,8 +756,8 @@ func TestSettingsAreKeptPerUser(t *testing.T) {
 		user.Expect(kitchen.HasButton("English"))
 	}
 
-	ada.Tap("فارسی")
-	ada.ExpectScreen(kitchen.TextContains("فارسی"))
+	ada.Tap("German")
+	ada.ExpectScreen(kitchen.TextContains("German"))
 
 	grace.Tap("English")
 	grace.ExpectScreen(kitchen.TextContains("English"))
@@ -765,7 +765,7 @@ func TestSettingsAreKeptPerUser(t *testing.T) {
 	// Ada acts last, so a setting leaking between chats would surface as Grace's
 	// language on Ada's screen.
 	ada.Tap("Turn notifications on")
-	ada.ExpectScreen(kitchen.TextIs("Settings: فارسی, notifications on"))
+	ada.ExpectScreen(kitchen.TextIs("Settings: German, notifications on"))
 
 	k.ExpectCount(1, kitchen.Method("editMessageText"), kitchen.ToUser(grace))
 }
@@ -803,8 +803,8 @@ go test ./... -kitchen.update    # rewrite every golden the run touches
 A message with no words of its own shows what it carries and enough to tell two
 of them apart — `(photo lunch.jpg)`, `(document terms.pdf) sign here`,
 `(location 35.7000, 51.4000)`. Text that runs right to left is fenced off from
-the frame around it, so a Persian reply does not drag the name and the brackets
-to the wrong side of the line. Nothing else is touched: a transcript with no
+the frame around it, so such a reply does not drag the name and the brackets to
+the wrong side of the line. Arabic, Hebrew, Syriac, Thaana and N'Ko all count. Nothing else is touched: a transcript with no
 such text reads as the same plain bytes it always did.
 
 A transcript is the chat's final state, not a replay: a menu edited in place

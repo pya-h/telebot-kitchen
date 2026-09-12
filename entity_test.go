@@ -102,21 +102,21 @@ func TestEveryParseModeReadsTheSameWay(t *testing.T) {
 }
 
 // Telegram measures a span in UTF-16 code units, so an emoji before it counts
-// twice and a Persian word inside it counts once a letter.
+// twice and a two-byte letter inside it counts once.
 func TestSpansAreMeasuredInUTF16(t *testing.T) {
-	text, entities, err := styleOf("🎉 *سلام* 🎉", "MarkdownV2")
+	text, entities, err := styleOf("🎉 *café* 🎉", "MarkdownV2")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
-	if text != "🎉 سلام 🎉" {
+	if text != "🎉 café 🎉" {
 		t.Fatalf("text = %q", text)
 	}
 	if len(entities) != 1 || entities[0].Offset != 3 || entities[0].Length != 4 {
 		t.Errorf("entity = %+v, want offset 3 length 4", entities)
 	}
 	// Which is the test that matters: the offsets have to find the word again.
-	if got := entitiesOf(text, entities); got[0].Text != "سلام" {
-		t.Errorf("span covers %q, want the Persian word", got[0].Text)
+	if got := entitiesOf(text, entities); got[0].Text != "café" {
+		t.Errorf("span covers %q, want the word between the emoji", got[0].Text)
 	}
 }
 
@@ -342,7 +342,7 @@ func TestTextIsMeasuredOnceTheMarkupIsOff(t *testing.T) {
 	}{
 		{"at the limit", strings.Repeat("a", mostText), "", true},
 		{"one over", strings.Repeat("a", mostText+1), "", false},
-		{"in Persian, two bytes a letter", strings.Repeat("س", mostText), "", true},
+		{"two bytes a letter", strings.Repeat("é", mostText), "", true},
 		{"longer only in its markup", "*" + strings.Repeat("a", mostText) + "*", models.ParseModeMarkdown, true},
 		{"in emoji, two UTF-16 units each", strings.Repeat("🎉", mostText/2+1), "", false},
 	} {

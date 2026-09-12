@@ -15,7 +15,7 @@ func TestAGroupMessageCarriesTheGroup(t *testing.T) {
 	k.DeliverTo(func(_ context.Context, u *models.Update) { got = u.Message })
 
 	team := k.Group(-42, "Standup")
-	k.User(7, WithFullName("Ali", "Rezaei")).In(team).Send("morning")
+	k.User(7, WithFullName("Ada", "Lovelace")).In(team).Send("morning")
 
 	if got.Chat.ID != -42 || got.Chat.Type != models.ChatTypeGroup || got.Chat.Title != "Standup" {
 		t.Errorf("chat = %+v, want the group", got.Chat)
@@ -31,19 +31,19 @@ func TestEachChatKeepsItsOwnPlace(t *testing.T) {
 	k.DeliverTo(syncBot(t, k, echoHandler).ProcessUpdate)
 
 	team := k.Supergroup(-1001, "Team")
-	ali := k.User(7)
+	alan := k.User(7)
 
-	ali.Send("private")
-	ali.In(team).Send("shared")
+	alan.Send("private")
+	alan.In(team).Send("shared")
 
-	if reply := ali.Expect(TextIs("echo: private")); reply.ChatID != 7 {
+	if reply := alan.Expect(TextIs("echo: private")); reply.ChatID != 7 {
 		t.Errorf("reply in chat %d, want the private one", reply.ChatID)
 	}
-	if reply := ali.In(team).Expect(TextIs("echo: shared")); reply.ChatID != -1001 {
+	if reply := alan.In(team).Expect(TextIs("echo: shared")); reply.ChatID != -1001 {
 		t.Errorf("reply in chat %d, want the group", reply.ChatID)
 	}
-	ali.ExpectNothingMore()
-	ali.In(team).ExpectNothingMore()
+	alan.ExpectNothingMore()
+	alan.In(team).ExpectNothingMore()
 }
 
 // Two people in one group read the same reply, each on their own watermark.
@@ -52,10 +52,10 @@ func TestEveryMemberReadsWhatTheBotSaid(t *testing.T) {
 	k.DeliverTo(syncBot(t, k, echoHandler).ProcessUpdate)
 
 	team := k.Group(-42, "Standup")
-	ali, sara := k.User(7).In(team), k.User(9).In(team)
+	alan, sara := k.User(7).In(team), k.User(9).In(team)
 
-	ali.Send("hello")
-	ali.Expect(TextIs("echo: hello"))
+	alan.Send("hello")
+	alan.Expect(TextIs("echo: hello"))
 	sara.Expect(TextIs("echo: hello"))
 }
 
@@ -167,10 +167,10 @@ func TestSpeakingBringsBackSomebodyWhoLeft(t *testing.T) {
 	k.DeliverTo(func(context.Context, *models.Update) {})
 
 	team := k.Group(-42, "Standup")
-	ali := k.User(7).In(team)
-	ali.Join()
-	ali.Leave()
-	ali.Send("one more thing")
+	alan := k.User(7).In(team)
+	alan.Join()
+	alan.Leave()
+	alan.Send("one more thing")
 
 	if members := team.Members(); len(members) != 1 || members[0].ID() != 7 {
 		t.Errorf("members = %v, want whoever is talking to be in the room", members)

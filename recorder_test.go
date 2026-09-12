@@ -62,7 +62,7 @@ func TestMatchersSelectCalls(t *testing.T) {
 	if n := calls.Count(Method("sendMessage"), ToUser(user)); n != 2 {
 		t.Errorf("sends to the user = %d, want the menu and the answer", n)
 	}
-	if !calls.Has(HasButton("lang:fa")) {
+	if !calls.Has(HasButton("lang:de")) {
 		t.Errorf("calls = %v, want the menu keyboard found by callback data", calls)
 	}
 	if !calls.Has(Method("answerCallbackQuery")) {

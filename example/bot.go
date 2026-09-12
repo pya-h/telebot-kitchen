@@ -12,7 +12,7 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-var languages = map[string]string{"en": "English", "fa": "فارسی"}
+var languages = map[string]string{"en": "English", "de": "German"}
 
 // New builds the bot against the given API base. Taking the base as an argument
 // is the one thing a project must do to be testable: a bot that hardcodes
@@ -113,7 +113,7 @@ func (s *store) tapped(ctx context.Context, b *bot.Bot, q *models.CallbackQuery)
 func languageKeyboard() *models.InlineKeyboardMarkup {
 	return &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 		{Text: languages["en"], CallbackData: "lang:en"},
-		{Text: languages["fa"], CallbackData: "lang:fa"},
+		{Text: languages["de"], CallbackData: "lang:de"},
 	}}}
 }
 

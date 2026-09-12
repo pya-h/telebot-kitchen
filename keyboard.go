@@ -8,8 +8,6 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-// Menu is the reply keyboard up in this chat: the hard keys under the compose
-// box, which stay put until the bot replaces or removes them.
 func (c *Chat) Menu() [][]string { return c.kitchen.world.menu(c.id) }
 
 func (m *Member) Menu() [][]string { return m.chat.Menu() }
@@ -23,7 +21,7 @@ func (m *Member) HasKey(label string) bool {
 	return false
 }
 
-// Bytes, not characters: a Persian letter costs two.
+// Bytes, not characters: a letter outside ASCII costs two or more.
 const mostCallbackData = 64
 
 type buttonData struct {
