@@ -172,6 +172,10 @@ func (k *Kitchen) stopPoll(p params) (any, error) {
 		return nil, err
 	}
 
+	if err := k.world.reach(chatID); err != nil {
+		return nil, err
+	}
+
 	current, carried := k.world.onPoll(chatID, messageID, func(*models.Poll) {})
 	if !carried {
 		return nil, requestError("message is not a poll")

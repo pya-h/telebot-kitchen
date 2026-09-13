@@ -113,7 +113,7 @@ func TestTheBotMayWriteToSomebodyWaitingToJoin(t *testing.T) {
 		t.Error("once ada's request is answered: sent, want it forbidden")
 	}
 
-	k.Clock().Advance(knockWindow - time.Second)
+	k.Clock().Advance(5*time.Minute - time.Second)
 	if err := send(grace.ID()); err != nil {
 		t.Errorf("a second before the window closes: %v", err)
 	}

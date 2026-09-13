@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -43,6 +44,18 @@ func (k *Kitchen) sharedChat(id int64, want models.ChatType, title string) *Chat
 }
 
 func (c *Chat) ID() int64 { return c.id }
+
+func (c *Chat) Public(username string) *Chat {
+	if c.kind != models.ChatTypeSupergroup && c.kind != models.ChatTypeChannel {
+		c.kitchen.tb.Errorf("kitchen: a %s has no public username, only a supergroup or a channel does", c.kind)
+		return c
+	}
+	handle := strings.TrimPrefix(username, "@")
+	if taken, ok := c.kitchen.world.publish(c.id, handle); !ok {
+		c.kitchen.tb.Errorf("kitchen: @%s already answers for chat %d, and Telegram hands a username out once", handle, taken)
+	}
+	return c
+}
 
 func (c *Chat) Title() string { return c.kitchen.world.title(c.id) }
 
@@ -111,7 +124,6 @@ func (c *Chat) Post(text string) Message {
 	return c.kitchen.view(sent)
 }
 
-// EditPost is the post reworded from a client; an edit the bot makes is its own.
 func (c *Chat) EditPost(post Message, text string) Message {
 	if c.kind != models.ChatTypeChannel {
 		c.kitchen.tb.Errorf("kitchen: %q is a %s, and only a channel carries posts", c.Title(), c.kind)

@@ -93,6 +93,24 @@ not have is a test error naming the ones it does.
 `Replay` is the exception: a recording is of a bot that was receiving what it
 carries, so replaying it adds those kinds rather than dropping them.
 
+### Handing the same update twice
+
+Telegram redelivers an update when it is not sure the first one arrived, so a
+bot that grants something on a payment has to be idempotent. `k.Redeliver()`
+hands the bot its last update again — identical, under the same `update_id` —
+and changes nothing in the chats:
+
+```go
+paid, _ := ada.Pay()
+k.Redeliver()                     // the same successful_payment, a second time
+require.Len(t, k.Payments(), 1)   // one charge, however often the bot hears of it
+```
+
+A polling bot is the exception, and the kitchen says so rather than pretending:
+before its offset moves, Telegram hands it the update again by itself; after the
+offset moves, Telegram never hands it back at all. `Redeliver` fails such a test
+and names which of the two it is.
+
 ## Talking to the bot
 
 Users are virtual people with their own private chat. `k.User(id, opts...)`
@@ -447,6 +465,18 @@ id Telegram would give it — negative, and a positive one is refused:
 team := k.Supergroup(-1001234567890, "Standup")   // also k.Group and k.Channel
 ```
 
+A public supergroup or channel also answers to its username, which a bot may use
+anywhere an id goes — `getChat`, `getChatMember`, a send, a copy. The `@` is
+optional when you set it, the match ignores case, and a name nobody holds is
+`400 chat not found`. So is a person's username: Telegram resolves those as
+chats for nobody. A username answers for one chat, and giving it to a second is a
+test error rather than a coin toss.
+
+```go
+news := k.Channel(-1001000000001, "News").Public("news_room")
+b.SendMessage(ctx, &bot.SendMessageParams{ChatID: "@news_room", Text: "hello"})
+```
+
 `ada.In(team)` is Ada inside that chat, and carries the same verbs the plain user
 has. Each chat keeps its own place in the conversation, so what Ada has already
 read in one says nothing about the other:
@@ -667,8 +697,11 @@ b, _ := bot.New(k.Token(), bot.WithServerURL(k.APIURL()),
 k.DeliverToWebhook(b.WebhookHandler())
 ```
 
-If the bot then registers a *different* secret, the kitchen fails the test
-naming both. Delivering with no secret known at all is said once through
+The declared token stands in only while the bot has registered nothing, which is
+the case `DeliverToWebhook` is. Once the bot calls `setWebhook`, what it
+registered is what goes out: a *different* secret fails the test naming both, and
+registering none means none is sent — as in production, where that bot would
+drop every update. Delivering with no secret known at all is said once through
 `t.Logf`, since that is the shape of the trap.
 
 ## Waiting instead of sleeping
@@ -1200,4 +1233,23 @@ k.DeliverToJSON(func(ctx context.Context, update []byte) {
 
 ## Not yet here
 
-This document grows with the surface, and describes only what ships today.
+This document grows with the surface, and describes only what ships today. What
+a bot may reach for and not find, so nobody has to discover it by running into
+it:
+
+- **`getFile` and downloading.** A test reads a file's bytes through `k.File(id)`
+  rather than over HTTP, and the method itself is not answered.
+- **Payments beyond Stars.** `XTR` invoices are held to Telegram's shape and paid
+  through `Pay()`; a provider currency is accepted but not validated, and
+  `shipping_query` / `answerShippingQuery` are not modelled.
+- **Business connections.** `business_connection`, `business_message` and the
+  rest are names a bot may register for, but no verb makes one.
+- **Paid media**, `ForceReply`, and one-time or persistent reply keyboards.
+- **Methods with no answer yet:** `sendLocation` and live locations (`sendVenue`
+  is there, and a user's `ShareLocation`), `leaveChat`, `setMyCommands` and
+  `getMyCommands`, `deleteMessages` in the plural, forum topics, giveaways,
+  sticker sets and web-app buttons.
+
+A method the kitchen does not answer is a test error naming it, alongside the
+404 the call itself gets, so a bot that reaches for one says so the first time
+it does rather than failing somewhere further on.

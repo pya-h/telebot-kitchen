@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/go-telegram/bot/models"
@@ -45,42 +46,137 @@ func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 	k.hook, k.process, k.polling, k.wire = handler, nil, false, false
 }
 
+// deliver hands one update over, and then any the bot made while it was being
+// handled: a bot approving a join request from inside its own handler would
+// otherwise wait on a delivery that is waiting on the bot.
 func (k *Kitchen) deliver(u models.Update) {
-	k.deliverMu.Lock()
+	if !k.deliverMu.TryLock() {
+		k.waiting.add(u)
+		return
+	}
 	defer k.deliverMu.Unlock()
+
+	k.handOver(u)
+	for next, more := k.waiting.take(); more; next, more = k.waiting.take() {
+		k.handOver(next)
+	}
+}
+
+func (k *Kitchen) handOver(u models.Update) {
 	defer k.activity.note()
 
 	if id, opened := opener(&u); opened {
 		k.world.start(id)
 	}
 
-	// Released before the bot runs: its own API calls take this lock too.
-	k.mu.RLock()
-	process, hook, polling, wire := k.process, k.hook, k.polling, k.wire
-	registered, asked := k.webhook, k.allowed
-	if registered.secretToken == "" {
-		registered.secretToken = k.secret
-	}
-	k.mu.RUnlock()
+	// Read before the bot runs: its own API calls take this lock too.
+	to := k.binding()
 
-	if kind := kindOf(&u); kind != "" && !allows(asked, kind) {
+	if kind := kindOf(&u); kind != "" && !allows(to.allowed, kind) {
 		k.reportDropped(kind)
 		return
 	}
 	u.ID = k.world.nextUpdate()
+	// Remembered only once somebody has taken it, so Redeliver never repeats an
+	// update no bot ever saw.
+	if k.hand(u, to) {
+		k.last, k.delivered = u, true
+	}
+}
 
+// waitingUpdates are the ones made while a delivery was already under way.
+type waitingUpdates struct {
+	mu   sync.Mutex
+	next []models.Update
+}
+
+func (q *waitingUpdates) add(u models.Update) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.next = append(q.next, u)
+}
+
+func (q *waitingUpdates) take() (models.Update, bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	if len(q.next) == 0 {
+		return models.Update{}, false
+	}
+	u := q.next[0]
+	q.next = q.next[1:]
+	return u, true
+}
+
+// binding is how the bot is attached to the kitchen, taken in one read.
+type binding struct {
+	process    UpdateProcessor
+	hook       http.Handler
+	registered webhook
+	polling    bool
+	wire       bool
+	allowed    []string
+}
+
+// queued says the bot takes its updates rather than being handed them.
+func (b binding) queued() bool { return b.polling || (b.wire && b.registered.url == "") }
+
+func (k *Kitchen) binding() binding {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+
+	to := binding{k.process, k.hook, k.webhook, k.polling, k.wire, k.allowed}
+	// The declared token stands in only while the bot has registered nothing:
+	// Telegram sends a secret only where setWebhook was given one.
+	if to.registered.url == "" && to.registered.secretToken == "" {
+		to.registered.secretToken = k.secret
+	}
+	return to
+}
+
+// Redeliver hands the bot its last update again, identical and under the same
+// id, the way Telegram does when it is not sure the first one arrived. Nothing
+// in the chats changes.
+func (k *Kitchen) Redeliver() {
+	k.deliverMu.Lock()
+	defer k.deliverMu.Unlock()
+	defer k.activity.note()
+
+	if !k.delivered {
+		k.tb.Errorf("kitchen: nothing has been delivered yet, so there is nothing to redeliver")
+		return
+	}
+
+	to := k.binding()
+	// Telegram hands a polling bot back no update its offset has confirmed, and
+	// hands it the rest again anyway.
+	if to.queued() {
+		if k.updates.confirmed(k.last.ID) {
+			k.tb.Errorf("kitchen: the bot's offset has already taken update %d, and Telegram redelivers none it has confirmed", k.last.ID)
+			return
+		}
+		k.tb.Errorf("kitchen: the bot has not taken update %d yet, so its next poll is handed it again without Redeliver", k.last.ID)
+		return
+	}
+	k.hand(k.last, to)
+}
+
+// hand gives the update to whatever is bound, and says whether anything took it.
+func (k *Kitchen) hand(u models.Update, to binding) bool {
 	switch {
-	case hook != nil:
-		k.post(hook, registered, u)
-	case process != nil:
-		process(context.Background(), &u)
-	case wire && registered.url != "":
-		k.send(registered, u)
-	case polling || wire:
+	case to.hook != nil:
+		k.post(to.hook, to.registered, u)
+	case to.process != nil:
+		to.process(context.Background(), &u)
+	case to.wire && to.registered.url != "":
+		k.send(to.registered, u)
+	case to.polling || to.wire:
 		k.updates.add(u)
 	default:
 		k.tb.Errorf("kitchen: no bot bound, call DeliverTo, DeliverToWebhook, DeliverByPolling or DeliverOverHTTP first")
+		return false
 	}
+	return true
 }
 
 func (k *Kitchen) post(handler http.Handler, registered webhook, u models.Update) {
@@ -137,7 +233,14 @@ var updateKinds = []updateKind{
 	{"removed_chat_boost", func(u *models.Update) bool { return u.RemovedChatBoost != nil }},
 }
 
-var everyUpdateKind = kindNames()
+// The kinds Telegram names that no kitchen verb makes. A bot may still register
+// them, and listing them keeps a real name from reading as a typo.
+var undelivered = []string{
+	"business_connection", "business_message", "edited_business_message",
+	"deleted_business_messages", "shipping_query", "purchased_paid_media",
+}
+
+var everyUpdateKind = append(kindNames(), undelivered...)
 
 func kindNames() []string {
 	names := make([]string, len(updateKinds))

@@ -320,3 +320,57 @@ func TestPickTakesTheNewestSearchPastTheNinth(t *testing.T) {
 		t.Errorf("picked %q, want the eleventh search's result", last.Text)
 	}
 }
+
+// A result the bot offers by URL is a file Telegram fetches, so it becomes one
+// the bot holds and may send again.
+func TestAResultFetchedByURLBecomesAFileTheBotHolds(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ada := k.User(7, Started())
+	k.DeliverTo(func(ctx context.Context, u *models.Update) {
+		if u.InlineQuery == nil {
+			return
+		}
+		if _, err := b.AnswerInlineQuery(ctx, &bot.AnswerInlineQueryParams{
+			InlineQueryID: u.InlineQuery.ID,
+			Results: []models.InlineQueryResult{&models.InlineQueryResultPhoto{
+				ID: "lunch", PhotoURL: "https://example.test/lunch.jpg",
+				ThumbnailURL: "https://example.test/lunch-thumb.jpg", Caption: "lunch",
+			}},
+		}); err != nil {
+			t.Errorf("answer: %v", err)
+		}
+	})
+
+	ada.Search("lunch")
+	k.Settle()
+	ada.Pick("lunch")
+	k.Settle()
+
+	log := ada.History()
+	sent := log[len(log)-1]
+	if sent.Media != "photo" || sent.Text != "lunch" {
+		t.Fatalf("message = %s, want the photo the result named", sent)
+	}
+	file, held := k.File(sent.FileID)
+	if !held || file.Name != "https://example.test/lunch.jpg" {
+		t.Fatalf("file = %+v, %v; want one the bot holds, named by where it came from", file, held)
+	}
+	// It is a photo from the moment it is fetched, before anything is sent again:
+	// every size answers for it, and no other kind does.
+	carried := k.world.history(ada.ID())
+	sizes := carried[len(carried)-1].Photo
+	if len(sizes) == 0 {
+		t.Fatalf("message = %+v, want a photo ladder", carried[len(carried)-1])
+	}
+	if _, small := k.File(sizes[0].FileID); !small {
+		t.Errorf("the smallest size is not a file the bot holds, want every size to answer for the photo")
+	}
+	if reply := sendMedia(t, k, ada.ID(), "sendDocument", "document", "document", sent.FileID); reply.OK ||
+		!strings.Contains(reply.Description, "type of file mismatch") {
+		t.Errorf("sending it as a document = %+v, want the kind it was fetched as kept", reply)
+	}
+	if reply := sendMedia(t, k, ada.ID(), "sendPhoto", "photo", "photo", sent.FileID); !reply.OK {
+		t.Errorf("sending it again = %+v, want the fetched photo resendable", reply)
+	}
+}

@@ -3,9 +3,11 @@ package kitchen
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
 )
 
@@ -340,4 +342,78 @@ func TestAPinIsNotAReplyToRead(t *testing.T) {
 	})
 
 	alan.ExpectNothingMore()
+}
+
+// Pinning, reacting and closing a poll are acts in a chat, so the chat comes
+// first: whether the bot may be there at all, then whatever right it holds.
+func TestTheBotActsOnlyWhereItCanReach(t *testing.T) {
+	k := talking(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	b := newClient(t, k)
+	ctx := context.Background()
+
+	card := mustSend(t, b, "hello")
+	poll, err := b.SendPoll(ctx, &bot.SendPollParams{
+		ChatID: testChatID, Question: "tea?", Options: []models.InputPollOption{{Text: "yes"}, {Text: "no"}},
+	})
+	if err != nil {
+		t.Fatalf("SendPoll: %v", err)
+	}
+	k.User(testChatID).BlockBot()
+
+	chat := fmt.Sprint(testChatID)
+	for _, one := range []struct {
+		name   string
+		method string
+		form   map[string]string
+	}{
+		{"pin", "pinChatMessage", map[string]string{"chat_id": chat, "message_id": fmt.Sprint(card.ID)}},
+		{"unpin", "unpinChatMessage", map[string]string{"chat_id": chat}},
+		{"react", "setMessageReaction", map[string]string{
+			"chat_id": chat, "message_id": fmt.Sprint(card.ID),
+			"reaction": `[{"type":"emoji","emoji":"\U0001F44D"}]`,
+		}},
+		{"stop the poll", "stopPoll", map[string]string{"chat_id": chat, "message_id": fmt.Sprint(poll.ID)}},
+	} {
+		reply := callForm(t, k, one.method, one.form)
+		if reply.OK || reply.status != http.StatusForbidden || !strings.Contains(reply.Description, "blocked by the user") {
+			t.Errorf("%s in a blocked chat = %+v, want it forbidden", one.name, reply)
+		}
+	}
+
+	// Deleting is the one thing a blocked chat still allows: a bot clearing up
+	// after a block is ordinary, and Telegram documents nothing against it.
+	if reply := callForm(t, k, "deleteMessage", map[string]string{
+		"chat_id": chat, "message_id": fmt.Sprint(card.ID),
+	}); !reply.OK {
+		t.Errorf("delete in a blocked chat = %+v, want it through", reply)
+	}
+
+	// Out of a group, the refusal is the standing rather than the right.
+	team := k.Group(-42, "Standup")
+	k.User(9).In(team).Send("morning")
+	mine := fmt.Sprint(team.History()[0].ID)
+	k.User(9).In(team).RemoveBot()
+
+	reply := callForm(t, k, "pinChatMessage", map[string]string{"chat_id": "-42", "message_id": mine})
+	if reply.OK || reply.status != http.StatusForbidden || !strings.Contains(reply.Description, "kicked from the group chat") {
+		t.Errorf("pin after being kicked = %+v, want the standing, not the right", reply)
+	}
+	gone := callForm(t, k, "deleteMessage", map[string]string{"chat_id": "-42", "message_id": mine})
+	if gone.OK || gone.status != http.StatusForbidden || !strings.Contains(gone.Description, "kicked from the group chat") {
+		t.Errorf("delete after being kicked = %+v, want it forbidden", gone)
+	}
+}
+
+// A file id is looked at after the chat, so a bot writing where it may not is
+// told that rather than told about the file.
+func TestTheChatIsReadBeforeTheFile(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	stranger := k.User(7)
+
+	reply := sendMedia(t, k, stranger.ID(), "sendPhoto", "photo", "photo", "never-issued")
+	if reply.OK || reply.status != http.StatusForbidden || !strings.Contains(reply.Description, "initiate conversation") {
+		t.Errorf("reply = %+v, want the chat refused before the file", reply)
+	}
 }

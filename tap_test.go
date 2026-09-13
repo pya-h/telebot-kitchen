@@ -78,12 +78,12 @@ func TestAnAnswerToATapHoldsTwoHundredCharacters(t *testing.T) {
 	ctx := context.Background()
 
 	if _, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: "1", Text: strings.Repeat("é", mostAnswer),
+		CallbackQueryID: "1", Text: strings.Repeat("é", 200),
 	}); err != nil {
 		t.Errorf("at the limit: %v", err)
 	}
 	_, err := b.AnswerCallbackQuery(ctx, &bot.AnswerCallbackQueryParams{
-		CallbackQueryID: "2", Text: strings.Repeat("a", mostAnswer+1), ShowAlert: true,
+		CallbackQueryID: "2", Text: strings.Repeat("a", 201), ShowAlert: true,
 	})
 	if err == nil || !strings.Contains(err.Error(), "too long") {
 		t.Errorf("one over: err = %v, want it refused", err)
@@ -224,5 +224,27 @@ func TestTapWithoutAnyKeyboardReports(t *testing.T) {
 	errs := tb.errors()
 	if len(errs) != 1 || !strings.Contains(errs[0], "no buttons on screen") {
 		t.Errorf("reported = %v, want one naming the empty screen", errs)
+	}
+}
+
+// A call the kitchen refused is still on the record, and its keyboard reads back
+// whether or not the buttons were ones Telegram would take.
+func TestARefusedCallStillShowsItsButtons(t *testing.T) {
+	k := talking(t)
+	reply := callForm(t, k, "sendMessage", map[string]string{
+		"chat_id": fmt.Sprint(testChatID), "text": "hi",
+		"reply_markup": `{"inline_keyboard":[[{"text":"Go","callback_data":""}]]}`,
+	})
+	if reply.OK {
+		t.Fatalf("reply = %+v, want the empty callback data refused", reply)
+	}
+
+	call := k.Expect(Method("sendMessage"))
+	if call.Error == "" {
+		t.Fatalf("call = %+v, want the refusal recorded against it", call)
+	}
+	rows := call.Keyboard()
+	if len(rows) != 1 || len(rows[0]) != 1 || rows[0][0].Label != "Go" {
+		t.Errorf("keyboard = %+v, want the buttons the refused call carried", rows)
 	}
 }

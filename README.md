@@ -75,8 +75,16 @@ updates by webhook or through a "handle one update" entry point.
   command so a bot in any language can be pointed at it and driven over HTTP.
 - **Stars payments** — invoices, the pre-checkout handshake and refunds, with a
   ledger that says whether a charge was given back.
+- **The refusals Telegram makes** — writing to somebody who never started the
+  bot or who blocked it, a `file_id` it was never given, text past 4096 or
+  `callback_data` past 64 bytes, an invoice Stars will not take: refused here
+  too, so a test that passes for the wrong reason fails instead.
+- **Only the updates a bot asked for** — `allowed_updates` is honoured, default
+  set and all, so a handler for a kind nobody registered fails here rather than
+  in production.
 - **Fault injection** — make the fake API return `429`/`5xx`/flood-wait/timeouts
-  on demand to exercise retry, backoff, and rate-limit handling.
+  on demand, or any code and description you name, to exercise retry, backoff,
+  and rate-limit handling.
 - **No sleeps** — wait for what the bot did, not for the clock; replies sent
   from a worker goroutine are settled before your assertions run.
 - **Concurrency rushes** — run a hundred conversations at once and catch the

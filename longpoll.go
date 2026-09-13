@@ -24,6 +24,7 @@ type pollQueue struct {
 	mu      sync.Mutex
 	waiting []models.Update
 	polling bool
+	taken   int64 // the newest offset a poll confirmed
 }
 
 func newPollQueue() *pollQueue { return &pollQueue{} }
@@ -66,6 +67,10 @@ func (q *pollQueue) confirm(offset int64) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
+	if offset > q.taken {
+		q.taken = offset
+	}
+
 	kept := q.waiting[:0]
 	for _, u := range q.waiting {
 		if u.ID >= offset {
@@ -73,6 +78,12 @@ func (q *pollQueue) confirm(offset int64) {
 		}
 	}
 	q.waiting = kept
+}
+
+func (q *pollQueue) confirmed(id int64) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return id < q.taken
 }
 
 // held is how much the queue is still carrying, which only a test asks about.

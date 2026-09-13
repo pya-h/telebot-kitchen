@@ -174,8 +174,13 @@ func TestAnUpdateKindTheBotDidNotAskForIsDropped(t *testing.T) {
 	ada.React("\U0001F44D")     // message_reaction, in a group the bot administers
 	ada.PromoteBot(PinMessages) // my_chat_member, which is in the default set
 
-	if kinds := deliveredKinds(got.all()); !slices.Equal(kinds, []string{"message", "my_chat_member"}) {
+	seen := got.all()
+	if kinds := deliveredKinds(seen); !slices.Equal(kinds, []string{"message", "my_chat_member"}) {
 		t.Errorf("kinds = %v, want only what the default set carries", kinds)
+	}
+	// A dropped update is not an update, so it takes no id with it.
+	if seen[0].ID != 1 || seen[1].ID != 2 {
+		t.Errorf("ids = %d, %d; want them consecutive, with no gap where a drop was", seen[0].ID, seen[1].ID)
 	}
 	notes := tb.noted()
 	if len(notes) != 2 || !strings.Contains(notes[0], "dropped chat_member") ||
@@ -316,5 +321,111 @@ func TestDeliveringWithoutASecretIsSaidOnce(t *testing.T) {
 	notes := tb.noted()
 	if len(notes) != 1 || !strings.Contains(notes[0], "without a secret token") {
 		t.Errorf("notes = %q, want one naming the trap", notes)
+	}
+}
+
+// Telegram names update kinds the kitchen has no verb for. A bot may register
+// them, and nothing arrives for them, which is what production does too.
+func TestAKindTheKitchenNeverSendsMayStillBeRegistered(t *testing.T) {
+	k := New(t, WithAllowedUpdates("message", "shipping_query"))
+	var got updates
+	got.collect(k)
+
+	k.User(7).Send("hi")
+
+	if kinds := deliveredKinds(got.all()); !slices.Equal(kinds, []string{"message"}) {
+		t.Errorf("kinds = %v, want the message and nothing else", kinds)
+	}
+}
+
+// The bot answering from inside its own handler makes an update of its own. The
+// kitchen must not be waiting on the handler that is waiting on the kitchen.
+func TestABotMayAnswerFromInsideItsHandler(t *testing.T) {
+	k := New(t, alsoHearing("chat_member"))
+	var b *bot.Bot
+	b = syncBot(t, k, func(ctx context.Context, _ *bot.Bot, u *models.Update) {
+		if u.ChatJoinRequest == nil {
+			return
+		}
+		if _, err := b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{
+			ChatID: u.ChatJoinRequest.Chat.ID, UserID: u.ChatJoinRequest.From.ID,
+		}); err != nil {
+			t.Errorf("ApproveChatJoinRequest: %v", err)
+		}
+	})
+	k.DeliverTo(b.ProcessUpdate)
+	team := k.Supergroup(-1001, "Standup")
+
+	asked := make(chan struct{})
+	go func() {
+		defer close(asked)
+		k.User(7).In(team).AskToJoin("let me in")
+	}()
+	select {
+	case <-asked:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the join request never came back; the kitchen waited on a bot that was waiting on it")
+	}
+	k.Settle()
+
+	if members := team.Members(); len(members) != 1 || members[0].ID() != 7 {
+		t.Errorf("roster = %+v, want the requester let in", members)
+	}
+}
+
+func TestAnUpdateNobodyTookIsNotRedelivered(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.deliver(textUpdate(testChatID, "hi"))
+	k.Redeliver()
+
+	errs := tb.errors()
+	if len(errs) != 2 || !strings.Contains(errs[0], "no bot bound") ||
+		!strings.Contains(errs[1], "nothing has been delivered") {
+		t.Errorf("errors = %q, want the unbound delivery and then nothing to redeliver", errs)
+	}
+}
+
+// The declared token stands in for a bot that registers nothing. Once the bot
+// registers a webhook without one, Telegram would send no secret, and neither
+// does the kitchen — which is the trap, said out loud.
+func TestADeclaredSecretStandsOnlyUntilTheBotRegisters(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb, WithWebhookSecret("s3cret"))
+	var carried []string
+	k.DeliverToWebhook(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		carried = append(carried, r.Header.Get(secretTokenHeader))
+	}))
+
+	k.deliver(textUpdate(testChatID, "one"))
+	callJSON(t, k, "setWebhook", `{"url":"https://example.test/hook"}`)
+	k.deliver(textUpdate(testChatID, "two"))
+
+	if !slices.Equal(carried, []string{"s3cret", ""}) {
+		t.Errorf("secrets carried = %q, want the declared one until the bot registered without it", carried)
+	}
+	if notes := tb.noted(); len(notes) != 1 || !strings.Contains(notes[0], "without a secret token") {
+		t.Errorf("notes = %q, want the trap named once", notes)
+	}
+	if errs := tb.errors(); len(errs) != 0 {
+		t.Errorf("errors = %q, want registering no secret to be no mismatch", errs)
+	}
+}
+
+func TestTheDefaultSetIsWhatTelegramHoldsBack(t *testing.T) {
+	kinds := DefaultUpdates()
+	for _, held := range []string{"chat_member", "message_reaction", "message_reaction_count"} {
+		if slices.Contains(kinds, held) {
+			t.Errorf("%s is in the default set, want it held back until a bot asks", held)
+		}
+	}
+	for _, sent := range []string{"message", "callback_query", "my_chat_member", "chat_join_request"} {
+		if !slices.Contains(kinds, sent) {
+			t.Errorf("%s is not in the default set, want a bot to get it without asking", sent)
+		}
 	}
 }

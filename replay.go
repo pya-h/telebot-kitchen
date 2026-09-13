@@ -101,7 +101,7 @@ func (k *Kitchen) seat(u models.Update, was int64) {
 	if who != nil && !who.IsBot {
 		person := k.User(who.ID, named(who)...)
 		if where != nil {
-			k.world.join(where.ID, person.telegram())
+			k.world.join(where.ID, person.identity())
 		}
 	}
 	if carried != nil {

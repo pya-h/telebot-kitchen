@@ -48,6 +48,10 @@ func (kind mediaKind) send(k *Kitchen, p params) (any, error) {
 	if file == "" {
 		return nil, badRequest(kind.param)
 	}
+
+	if err := k.mayPost(chatID); err != nil {
+		return nil, err
+	}
 	held, err := k.files.resolve(file, kind.param)
 	if err != nil {
 		return nil, err

@@ -131,15 +131,9 @@ func (k *Kitchen) mayPost(chatID int64) error {
 	return err
 }
 
-// mayPost reports why the bot cannot put a message in this chat, if it cannot.
-func (w *world) mayPost(chatID int64) error {
-	w.mu.RLock()
-	defer w.mu.RUnlock()
-
-	c, ok := w.chats[chatID]
-	if !ok {
-		return requestError("chat not found")
-	}
+// reach is why the bot cannot act in this chat at all, ahead of any right it
+// may or may not hold there.
+func (c *chat) reach() error {
 	switch {
 	case c.blocked():
 		return errBlocked
@@ -149,7 +143,34 @@ func (w *world) mayPost(chatID int64) error {
 		return forbidden("bot was kicked from the " + string(c.info.Type) + " chat")
 	case !c.bot.present():
 		return forbidden("bot is not a member of the " + string(c.info.Type) + " chat")
-	case c.info.Type == models.ChatTypeChannel && !c.bot.may(PostMessages):
+	}
+	return nil
+}
+
+func (w *world) reach(chatID int64) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	return c.reach()
+}
+
+// mayPost reports why the bot cannot put a message in this chat, if it cannot.
+func (w *world) mayPost(chatID int64) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	if err := c.reach(); err != nil {
+		return err
+	}
+	if c.info.Type == models.ChatTypeChannel && !c.bot.may(PostMessages) {
 		return requestError("need administrator rights in the channel chat")
 	}
 	return nil
@@ -187,6 +208,9 @@ func (c *chat) mayEdit(m *models.Message, botID int64) error {
 }
 
 func (c *chat) mayPin() error {
+	if err := c.reach(); err != nil {
+		return err
+	}
 	if c.info.Type == models.ChatTypePrivate || c.bot.may(PinMessages) {
 		return nil
 	}

@@ -46,6 +46,9 @@ var controlVerbs = map[string]func(*Kitchen, order) any{
 }
 
 func (k *Kitchen) control(w http.ResponseWriter, r *http.Request) {
+	k.controlMu.Lock()
+	defer k.controlMu.Unlock()
+
 	verb, known := controlVerbs[strings.TrimPrefix(r.URL.Path, controlPrefix)]
 	if !known {
 		http.NotFound(w, r)

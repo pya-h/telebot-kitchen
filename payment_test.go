@@ -456,3 +456,103 @@ func TestAnInvoiceInAnotherCurrencyKeepsItsBreakdown(t *testing.T) {
 		t.Errorf("invoice = %+v, want the prices summed", sent.Invoice)
 	}
 }
+
+// Telegram may hand an update over twice, and a bot that grants on a payment
+// must not grant twice for it.
+func TestARedeliveredUpdateIsTheSameUpdate(t *testing.T) {
+	k := talking(t)
+	b, seen := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
+	invoiceFor(t, b, testChatID)
+
+	paid, ok := k.User(testChatID).Pay()
+	if !ok {
+		t.Fatalf("Pay = %+v, %v; want the charge through", paid, ok)
+	}
+	k.Redeliver()
+
+	var payments []models.Update
+	for _, u := range seen.all() {
+		if u.Message != nil && u.Message.SuccessfulPayment != nil {
+			payments = append(payments, u)
+		}
+	}
+	if len(payments) != 2 {
+		t.Fatalf("payment updates = %+v, want the one update handed over twice", payments)
+	}
+	first, again := payments[0], payments[1]
+	if again.ID != first.ID || again.Message.ID != first.Message.ID ||
+		again.Message.SuccessfulPayment.TelegramPaymentChargeID != paid.ChargeID {
+		t.Errorf("redelivered = %+v, want the first update again, id and all", again)
+	}
+	if charges := k.Payments(); len(charges) != 1 {
+		t.Errorf("payments = %+v, want the redelivery to have charged nothing", charges)
+	}
+}
+
+// A currency with a provider behind it needs the provider's token, and no
+// currency Telegram cannot name is taken at all.
+func TestAnInvoiceInAnotherCurrencyNeedsItsProvider(t *testing.T) {
+	k := talking(t)
+	full := map[string]string{
+		"chat_id": fmt.Sprint(testChatID), "title": "Boost", "description": "d",
+		"payload": boost, "currency": "EUR", "provider_token": "tok",
+		"prices": `[{"label":"Boost","amount":900}]`,
+	}
+	for _, one := range []struct {
+		name    string
+		field   string
+		value   string
+		refused string
+	}{
+		{"no provider token", "provider_token", "", "PAYMENT_PROVIDER_INVALID"},
+		{"a currency in lower case", "currency", "eur", "CURRENCY_INVALID"},
+		{"a currency of the wrong shape", "currency", "EURO", "CURRENCY_INVALID"},
+	} {
+		asked := map[string]string{}
+		for name, value := range full {
+			asked[name] = value
+		}
+		asked[one.field] = one.value
+
+		reply := callForm(t, k, "sendInvoice", asked)
+		if reply.OK || reply.ErrorCode != http.StatusBadRequest || !strings.Contains(reply.Description, one.refused) {
+			t.Errorf("%s = %+v, want %s", one.name, reply, one.refused)
+		}
+	}
+}
+
+// refundStarPayment is for Stars. A provider's charge is refunded through the
+// provider, and is not in the Stars ledger at all.
+func TestOnlyAStarsChargeIsGivenBackThroughTelegram(t *testing.T) {
+	k := talking(t)
+	b, _ := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
+
+	callForm(t, k, "sendInvoice", map[string]string{
+		"chat_id": fmt.Sprint(testChatID), "title": "Boost", "description": "d",
+		"payload": boost, "currency": "EUR", "provider_token": "tok",
+		"prices": `[{"label":"Boost","amount":900}]`,
+	})
+	paid, ok := k.User(testChatID).Pay()
+	if !ok || paid.Currency != "EUR" {
+		t.Fatalf("paid = %+v, %v; want the provider's charge", paid, ok)
+	}
+
+	reply := callForm(t, k, "refundStarPayment", map[string]string{
+		"user_id": fmt.Sprint(testChatID), "telegram_payment_charge_id": paid.ChargeID,
+	})
+	if reply.OK || !strings.Contains(reply.Description, "CHARGE_NOT_FOUND") {
+		t.Errorf("refund = %+v, want a charge Stars never took to be unknown", reply)
+	}
+
+	var ledger struct {
+		Transactions []struct {
+			ID string `json:"id"`
+		} `json:"transactions"`
+	}
+	callForm(t, k, "getStarTransactions", nil).decode(t, &ledger)
+	if len(ledger.Transactions) != 0 {
+		t.Errorf("star transactions = %+v, want the provider's charge kept out", ledger.Transactions)
+	}
+}

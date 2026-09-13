@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -190,6 +191,37 @@ func (w *world) blocked(chatID int64) bool {
 
 	c, ok := w.chats[chatID]
 	return ok && c.blocked()
+}
+
+// publish gives the chat a username, unless somebody else already answers to
+// it: Telegram hands each one out once, and two would make a name ambiguous.
+func (w *world) publish(chatID int64, username string) (int64, bool) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	for id, c := range w.chats {
+		if id != chatID && c.info.Username != "" && strings.EqualFold(c.info.Username, username) {
+			return id, false
+		}
+	}
+	w.chatAt(chatID).info.Username = username
+	return chatID, true
+}
+
+// byUsername answers what a bot naming a chat instead of numbering it meant. A
+// person's username is not a chat Telegram will resolve, so private chats are
+// left out however they are named.
+func (w *world) byUsername(username string) (int64, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	handle := strings.TrimPrefix(username, "@")
+	for id, c := range w.chats {
+		if c.info.Type != models.ChatTypePrivate && c.info.Username != "" && strings.EqualFold(c.info.Username, handle) {
+			return id, true
+		}
+	}
+	return 0, false
 }
 
 func (w *world) info(chatID int64) (models.Chat, bool) {

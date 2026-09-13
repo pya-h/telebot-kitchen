@@ -200,6 +200,14 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Resolved before anything reads the call, so the record, the matchers and
+	// the world all see the same chat.
+	if err := k.named(p); err != nil {
+		k.calls.record(newCall(method, p).rejected(err))
+		writeError(w, err)
+		return
+	}
+
 	call := newCall(method, p)
 	// Injected before dispatch: a call Telegram refuses never reaches the world.
 	if fault, refused := k.faults.pick(call); refused {
@@ -221,6 +229,22 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	k.calls.record(call)
 	writeResult(w, result)
+}
+
+// named puts a numeric id in place of every @username the call carries, so the
+// methods below only ever see the ids the world is keyed by.
+func (k *Kitchen) named(p params) error {
+	for _, field := range []string{"chat_id", "from_chat_id"} {
+		if !strings.HasPrefix(p[field], "@") {
+			continue
+		}
+		id, known := k.world.byUsername(p[field])
+		if !known {
+			return requestError("chat not found")
+		}
+		p[field] = strconv.FormatInt(id, 10)
+	}
+	return nil
 }
 
 func (k *Kitchen) reportUnsupported(method string) {

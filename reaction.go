@@ -106,6 +106,10 @@ func (k *Kitchen) setMessageReaction(p params) (any, error) {
 		return nil, err
 	}
 
+	if err := k.world.reach(chatID); err != nil {
+		return nil, err
+	}
+
 	var wanted []models.ReactionType
 	if err := p.decode("reaction", &wanted); err != nil {
 		return nil, badRequest("reaction")

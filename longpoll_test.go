@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -292,5 +293,73 @@ func TestClosingTheKitchenGivesUpOnAPollInFlight(t *testing.T) {
 	case <-closed:
 	case <-time.After(5 * time.Second):
 		t.Error("closing the kitchen waited on the poll instead of cutting it short")
+	}
+}
+
+// A polling bot takes its updates, so there is nothing for the kitchen to hand
+// back: before the offset moves Telegram repeats the update by itself, and
+// after it moves Telegram never repeats it at all.
+func TestAPollingBotIsNotRedeliveredTo(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb, WithWaitTimeout(50*time.Millisecond))
+	k.Redeliver()
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "nothing has been delivered") {
+		t.Fatalf("errors = %q, want one about there being nothing to redeliver", errs)
+	}
+
+	k.DeliverByPolling()
+	k.User(7, Started()).Send("hi")
+
+	k.Redeliver()
+	if errs := tb.errors(); len(errs) != 2 || !strings.Contains(errs[1], "has not taken update") {
+		t.Fatalf("errors = %q, want one saying the poll is handed it again anyway", errs)
+	}
+
+	var taken []models.Update
+	callForm(t, k, "getUpdates", nil).decode(t, &taken)
+	if len(taken) != 1 {
+		t.Fatalf("polled %+v, want the one update", taken)
+	}
+	// The offset is the id the bot will take next, so re-asking from the same one
+	// confirms nothing.
+	callForm(t, k, "getUpdates", map[string]string{"offset": fmt.Sprint(taken[0].ID)})
+	k.Redeliver()
+	if errs := tb.errors(); len(errs) != 3 || !strings.Contains(errs[2], "has not taken update") {
+		t.Fatalf("errors = %q, want the same offset to have confirmed nothing", errs)
+	}
+
+	callForm(t, k, "getUpdates", map[string]string{"offset": fmt.Sprint(taken[0].ID + 1)})
+	k.Redeliver()
+	if errs := tb.errors(); len(errs) != 4 || !strings.Contains(errs[3], "already taken update") {
+		t.Fatalf("errors = %q, want one about the offset", errs)
+	}
+
+	// An offset that goes backwards takes nothing back.
+	callForm(t, k, "getUpdates", map[string]string{"offset": "1"})
+	k.Redeliver()
+	if errs := tb.errors(); len(errs) != 5 || !strings.Contains(errs[4], "already taken update") {
+		t.Errorf("errors = %q, want a backwards offset to have confirmed nothing back", errs)
+	}
+}
+
+// A wire with nothing registered queues its updates the way a poll does, so a
+// redelivery there would put the same update in the queue twice.
+func TestARedeliveryIsNotForAQueueingWire(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb, WithWaitTimeout(50*time.Millisecond))
+	k.DeliverOverHTTP()
+	k.User(7, Started()).Send("hi")
+
+	k.Redeliver()
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "has not taken update") {
+		t.Errorf("errors = %q, want the queueing wire refused like a poll", errs)
+	}
+	if held := k.updates.held(); held != 1 {
+		t.Errorf("queue holds %d, want the update once", held)
 	}
 }

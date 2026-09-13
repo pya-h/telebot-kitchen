@@ -3,6 +3,7 @@ package kitchen
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -306,5 +307,22 @@ func TestLeavingReadsTheSameAsNeverJoining(t *testing.T) {
 
 	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeLeft {
 		t.Errorf("member = %+v, want left", member)
+	}
+}
+
+// Telegram sends chat_member only to a bot that administers the chat, whatever
+// the bot asked for.
+func TestOnlyAnAdministeringBotHearsWhoCameAndWent(t *testing.T) {
+	k := New(t, alsoHearing("chat_member"))
+	var got updates
+	got.collect(k)
+
+	team := k.Group(-42, "Standup")
+	k.User(9).In(team).DemoteBot()
+	k.User(7).In(team).Join()
+
+	want := []string{"my_chat_member", "message"}
+	if kinds := deliveredKinds(got.all()); !slices.Equal(kinds, want) {
+		t.Errorf("kinds = %v, want %v, with no chat_member for a bot that administers nothing", kinds, want)
 	}
 }

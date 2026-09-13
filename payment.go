@@ -127,7 +127,10 @@ func (l *ledger) charge(c checkout, at int) Payment {
 	}
 	l.charges = append(l.charges, paid)
 	l.byCharge[paid.ChargeID] = paid
-	l.entries = append(l.entries, entry{id: paid.ChargeID, amount: paid.Amount, date: at, user: c.user, payload: paid.Payload})
+	// The Stars ledger is the Stars ledger: a provider's charge is not a line in it.
+	if paid.Currency == stars {
+		l.entries = append(l.entries, entry{id: paid.ChargeID, amount: paid.Amount, date: at, user: c.user, payload: paid.Payload})
+	}
 	return *paid
 }
 
@@ -135,8 +138,10 @@ func (l *ledger) refund(userID int64, chargeID string, at int, who models.User) 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	// Only Stars go through refundStarPayment; a provider's charge is refunded
+	// through the provider, and is not in this ledger to find.
 	paid, found := l.byCharge[chargeID]
-	if !found || paid.UserID != userID {
+	if !found || paid.UserID != userID || paid.Currency != stars {
 		return Payment{}, requestError("CHARGE_NOT_FOUND")
 	}
 	if paid.Refunded {
@@ -210,8 +215,8 @@ func (l *ledger) all() []Payment {
 	return paid
 }
 
-// Payments is every Stars charge the bot has taken, oldest first, each saying
-// whether it has since been given back.
+// Payments is every charge the bot has taken, oldest first, each saying whether
+// it has since been given back.
 func (k *Kitchen) Payments() []Payment { return k.payments.all() }
 
 func (k *Kitchen) sendInvoice(p params) (any, error) {
@@ -228,10 +233,8 @@ func (k *Kitchen) sendInvoice(p params) (any, error) {
 	if err := p.decode("prices", &prices); err != nil || len(prices) == 0 {
 		return nil, badRequest("prices")
 	}
-	if p["currency"] == stars {
-		if err := starPriced(p["provider_token"], prices); err != nil {
-			return nil, err
-		}
+	if err := invoicePriced(p["currency"], p["provider_token"], prices); err != nil {
+		return nil, err
 	}
 	markup, err := k.accept(p, chatID)
 	if err != nil {
@@ -260,8 +263,18 @@ func (k *Kitchen) sendInvoice(p params) (any, error) {
 }
 
 // Stars are charged by Telegram itself, so there is no provider behind them and
-// nothing to break the amount down into.
-func starPriced(providerToken string, prices []models.LabeledPrice) error {
+// nothing to break the amount down into. Every other currency is a provider's,
+// and Telegram will not take one without a token.
+func invoicePriced(currency, providerToken string, prices []models.LabeledPrice) error {
+	if !currencyCode(currency) {
+		return requestError("CURRENCY_INVALID")
+	}
+	if currency != stars {
+		if providerToken == "" {
+			return requestError("PAYMENT_PROVIDER_INVALID")
+		}
+		return nil
+	}
 	switch {
 	case providerToken != "":
 		return requestError("provider_token must be empty for payments in Telegram Stars")
@@ -271,6 +284,20 @@ func starPriced(providerToken string, prices []models.LabeledPrice) error {
 		return requestError("price amount must be positive")
 	}
 	return nil
+}
+
+// Telegram takes its currencies as ISO 4217 codes; which of them a provider
+// supports is the provider's business and not modelled.
+func currencyCode(code string) bool {
+	if len(code) != 3 {
+		return false
+	}
+	for _, r := range code {
+		if r < 'A' || r > 'Z' {
+			return false
+		}
+	}
+	return true
 }
 
 func (k *Kitchen) answerPreCheckoutQuery(p params) (any, error) {

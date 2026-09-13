@@ -335,7 +335,10 @@ func (m *Member) announce(who models.User, to standing, service *models.Message)
 		m.awaiting = sent.ID
 		m.kitchen().deliver(models.Update{Message: &sent})
 	}
-	m.kitchen().deliver(models.Update{ChatMember: m.changed(chat, was, now)})
+	// Telegram tells only a bot that administers the chat who came and went.
+	if m.kitchen().world.botAdministers(m.chat.id) {
+		m.kitchen().deliver(models.Update{ChatMember: m.changed(chat, was, now)})
+	}
 }
 
 func (m *Member) announceBot(to standing) {

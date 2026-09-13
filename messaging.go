@@ -1,6 +1,7 @@
 package kitchen
 
 import (
+	"errors"
 	"reflect"
 	"slices"
 
@@ -181,6 +182,12 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
+	// A blocked chat is the one left alone: Telegram documents nothing there, and
+	// a bot clearing up after a block is ordinary.
+	if err := k.world.reach(chatID); err != nil && !errors.Is(err, errBlocked) {
+		return nil, err
+	}
+
 	botID := k.botUser().ID
 	found, err := k.world.remove(chatID, messageID, func(c *chat, m *models.Message) error {
 		return c.mayDelete(m, botID)

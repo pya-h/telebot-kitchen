@@ -63,6 +63,13 @@ type Kitchen struct {
 	waitTimeout time.Duration
 
 	deliverMu sync.Mutex
+	waiting   waitingUpdates
+	last      models.Update // guarded by deliverMu, for Redeliver
+	delivered bool
+
+	// The control surface answers on its own goroutines, and a virtual person is
+	// meant to be driven by one.
+	controlMu sync.Mutex
 
 	mu      sync.RWMutex
 	bot     models.User

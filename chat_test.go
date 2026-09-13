@@ -2,6 +2,8 @@ package kitchen
 
 import (
 	"context"
+	"fmt"
+	"net/http"
 	"strings"
 	"testing"
 
@@ -215,5 +217,106 @@ func TestAGroupMigratesOnlyOnce(t *testing.T) {
 	}
 	if _, registered := k.world.info(-1099); registered {
 		t.Error("the refused migration registered a chat nothing became")
+	}
+}
+
+func TestAPublicChatAnswersToItsUsername(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1001, "News").Public("@news_room")
+	ada := k.User(7, Started())
+	ada.In(news).Join()
+
+	var info models.ChatFullInfo
+	callForm(t, k, "getChat", map[string]string{"chat_id": "@News_Room"}).decode(t, &info)
+	if info.ID != news.ID() || info.Username != "news_room" {
+		t.Errorf("chat = %+v, want the channel behind the name, case and all", info)
+	}
+
+	var named, numbered models.ChatMember
+	callForm(t, k, "getChatMember", map[string]string{"chat_id": "@news_room", "user_id": "7"}).decode(t, &named)
+	callForm(t, k, "getChatMember", map[string]string{"chat_id": "-1001", "user_id": "7"}).decode(t, &numbered)
+	if named.Type != numbered.Type || named.Member == nil || named.Member.User.ID != 7 {
+		t.Errorf("by name = %+v, by id = %+v; want the same answer", named, numbered)
+	}
+
+	if reply := callForm(t, k, "sendMessage", map[string]string{"chat_id": "@news_room", "text": "hello"}); !reply.OK {
+		t.Errorf("reply = %+v, want a post by name accepted", reply)
+	}
+	posted := k.History(news.ID())
+	if len(posted) != 2 || posted[1].Text != "hello" {
+		t.Fatalf("history = %+v, want the post landed in the channel", posted)
+	}
+
+	// The chat a call reads from is named the same way.
+	copied := callForm(t, k, "copyMessage", map[string]string{
+		"chat_id": fmt.Sprint(ada.ID()), "from_chat_id": "@news_room",
+		"message_id": fmt.Sprint(posted[1].ID),
+	})
+	if !copied.OK {
+		t.Errorf("copy = %+v, want the source named by username", copied)
+	}
+
+	// A name nobody holds, and a name that belongs to a person rather than a chat.
+	k.User(8, WithUsername("ada"))
+	for _, name := range []string{"@nobody", "@ada"} {
+		reply := callForm(t, k, "getChat", map[string]string{"chat_id": name})
+		if reply.OK || reply.status != http.StatusBadRequest || !strings.Contains(reply.Description, "chat not found") {
+			t.Errorf("%s = %+v, want chat not found", name, reply)
+		}
+	}
+}
+
+func TestOnlyASupergroupOrChannelIsPublic(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.Group(-42, "Standup").Public("standup")
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "no public username") {
+		t.Fatalf("errors = %q, want one about the kind of chat", errs)
+	}
+	if id, known := k.world.byUsername("standup"); known {
+		t.Errorf("@standup answers for chat %d, want a refused name to have been taken by nobody", id)
+	}
+
+	// Saying it twice for the same chat is saying the same thing.
+	k.Channel(-1001, "News").Public("news_room").Public("news_room")
+	if errs := tb.errors(); len(errs) != 1 {
+		t.Errorf("errors = %q, want nothing said about a chat keeping its own name", errs)
+	}
+}
+
+// A call that names its chat is the same call as one that numbers it: the record
+// and the matchers see the id either way.
+func TestACallByNameIsRecordedByID(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1001, "News").Public("news_room")
+	k.Fail(Refuse(http.StatusBadRequest, "Bad Request: nope"), ToChat(news.ID()), Method("sendMessage"))
+
+	reply := callForm(t, k, "sendMessage", map[string]string{"chat_id": "@news_room", "text": "hi"})
+	if reply.OK || !strings.Contains(reply.Description, "nope") {
+		t.Errorf("reply = %+v, want the fault scoped to the chat to fire for its name", reply)
+	}
+	if call := k.Expect(Method("sendMessage")); call.ChatID != news.ID() {
+		t.Errorf("recorded chat = %d, want %d", call.ChatID, news.ID())
+	}
+}
+
+func TestAUsernameAnswersForOneChat(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+
+	k := New(tb)
+	k.Channel(-1001, "News").Public("news_room")
+	k.Supergroup(-1002, "News talk").Public("@News_Room")
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "already answers") {
+		t.Fatalf("errors = %q, want one about the name being taken", errs)
+	}
+	if id, known := k.world.byUsername("news_room"); !known || id != -1001 {
+		t.Errorf("@news_room = %d, %v; want the chat that had it first", id, known)
 	}
 }
