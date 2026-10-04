@@ -163,6 +163,10 @@ func forwardedFrom(o *models.MessageOrigin) string {
 	switch {
 	case o.MessageOriginUser != nil:
 		return displayName(&o.MessageOriginUser.SenderUser)
+	case o.MessageOriginHiddenUser != nil:
+		return o.MessageOriginHiddenUser.SenderUserName
+	case o.MessageOriginChat != nil:
+		return o.MessageOriginChat.SenderChat.Title
 	case o.MessageOriginChannel != nil:
 		return o.MessageOriginChannel.Chat.Title
 	}

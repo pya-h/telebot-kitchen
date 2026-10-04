@@ -15,7 +15,9 @@ func (k *Kitchen) forwardMessage(p params) (any, error) {
 	forwarded.EditDate = 0
 	// Whose message it is now depends on where it lands, not on where it came from.
 	forwarded.SenderChat = nil
-	forwarded.ReplyMarkup = nil
+	forwarded.AuthorSignature = ""
+	forwarded.MediaGroupID = ""
+	forwarded.ReplyMarkup = forwardable(source.ReplyMarkup)
 
 	return k.relaid(target, forwarded), nil
 }
@@ -39,6 +41,8 @@ func (k *Kitchen) copyMessage(p params) (any, error) {
 	copied.From = &sender
 	copied.EditDate = 0
 	copied.SenderChat = nil
+	copied.AuthorSignature = ""
+	copied.MediaGroupID = ""
 	copied.ForwardOrigin = nil
 	copied.ReplyMarkup = markup
 	if _, captioned := mediaOf(&copied); captioned && caption != "" {
@@ -81,13 +85,25 @@ func origin(m models.Message) *models.MessageOrigin {
 		carried := *m.ForwardOrigin
 		return &carried
 
-	case m.SenderChat != nil:
+	case m.SenderChat != nil && m.SenderChat.Type == models.ChatTypeChannel:
 		return &models.MessageOrigin{
 			Type: models.MessageOriginTypeChannel,
 			MessageOriginChannel: &models.MessageOriginChannel{
-				Date:      m.Date,
-				Chat:      *m.SenderChat,
-				MessageID: m.ID,
+				Date:            m.Date,
+				Chat:            *m.SenderChat,
+				MessageID:       m.ID,
+				AuthorSignature: signature(m.AuthorSignature),
+			},
+		}
+
+	// An admin speaking as the group itself.
+	case m.SenderChat != nil:
+		return &models.MessageOrigin{
+			Type: models.MessageOriginTypeChat,
+			MessageOriginChat: &models.MessageOriginChat{
+				Date:            m.Date,
+				SenderChat:      *m.SenderChat,
+				AuthorSignature: signature(m.AuthorSignature),
 			},
 		}
 
@@ -101,4 +117,40 @@ func origin(m models.Message) *models.MessageOrigin {
 		}
 	}
 	return nil
+}
+
+func signature(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+// forwardable is the keyboard a forward keeps. Telegram lets a link or a copy
+// button through; any button that would act for the bot takes the whole keyboard
+// down with it.
+func forwardable(markup *models.InlineKeyboardMarkup) *models.InlineKeyboardMarkup {
+	if markup == nil {
+		return nil
+	}
+	rows := make([][]models.InlineKeyboardButton, len(markup.InlineKeyboard))
+	for i, row := range markup.InlineKeyboard {
+		rows[i] = make([]models.InlineKeyboardButton, len(row))
+		for j, button := range row {
+			kept := models.InlineKeyboardButton{Text: button.Text, Style: button.Style, IconCustomEmojiID: button.IconCustomEmojiID}
+			switch {
+			case button.URL != "":
+				kept.URL = button.URL
+			case button.LoginURL != nil:
+				kept.URL = button.LoginURL.URL
+			case button.CopyText != nil:
+				copyText := *button.CopyText
+				kept.CopyText = &copyText
+			default:
+				return nil
+			}
+			rows[i][j] = kept
+		}
+	}
+	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
 }

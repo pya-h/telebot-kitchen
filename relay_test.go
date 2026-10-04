@@ -37,7 +37,7 @@ func TestForwardCarriesItsOrigin(t *testing.T) {
 	}
 }
 
-func TestForwardDropsTheKeyboard(t *testing.T) {
+func TestForwardDropsAKeyboardOfCallbacks(t *testing.T) {
 	k := talking(t)
 	b := newClient(t, k)
 
@@ -60,6 +60,141 @@ func TestForwardDropsTheKeyboard(t *testing.T) {
 	}
 	if forwarded.ReplyMarkup != nil {
 		t.Errorf("forwarded = %+v, want a keyboard whose callbacks mean nothing here dropped", forwarded)
+	}
+}
+
+func TestForwardKeepsAKeyboardOfLinks(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+
+	links := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+		{{Text: "Site", URL: "https://example.com"}},
+		{{Text: "Sign in", LoginURL: &models.LoginURL{URL: "https://example.com/login"}}},
+		{{Text: "Code", CopyText: &models.CopyTextButton{Text: "FRIEND10"}}},
+	}}
+	mixed := &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{
+		{{Text: "Site", URL: "https://example.com"}, {Text: "Vote", CallbackData: "vote"}},
+	}}
+	for _, markup := range []*models.InlineKeyboardMarkup{links, mixed} {
+		sent, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
+			ChatID: testChatID, Text: "read more", ReplyMarkup: markup,
+		})
+		if err != nil {
+			t.Fatalf("SendMessage: %v", err)
+		}
+		if _, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+			ChatID: otherChatID, FromChatID: testChatID, MessageID: sent.ID,
+		}); err != nil {
+			t.Fatalf("ForwardMessage: %v", err)
+		}
+	}
+
+	landed := k.History(otherChatID)
+	if len(landed) != 2 {
+		t.Fatalf("chat = %v, want both forwards", landed)
+	}
+	if got := landed[0].Buttons(); len(got) != 3 || got[1].URL != "https://example.com/login" || got[2].Label != "Code" {
+		t.Errorf("forward = %+v, want the links and the copy button kept, the sign-in turned into a link", got)
+	}
+	if landed[1].Keyboard != nil {
+		t.Errorf("forward = %+v, want one button for the bot to take the keyboard down", landed[1].Keyboard)
+	}
+}
+
+func TestOnePartOfAnAlbumTravelsAlone(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+
+	ada := k.User(testChatID)
+	ada.SendAlbum(Photo("one.jpg", []byte("a"), ""), Photo("two.jpg", []byte("b"), ""))
+	part := ada.History()[0]
+
+	if _, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID: otherChatID, FromChatID: testChatID, MessageID: part.ID,
+	}); err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	if _, err := b.CopyMessage(context.Background(), &bot.CopyMessageParams{
+		ChatID: otherChatID, FromChatID: testChatID, MessageID: part.ID,
+	}); err != nil {
+		t.Fatalf("CopyMessage: %v", err)
+	}
+
+	for _, m := range k.History(otherChatID) {
+		if m.Album != "" {
+			t.Errorf("relayed = %+v, want it out of the album it left", m)
+		}
+	}
+}
+
+func TestAForwardFromAGroupSpeakingAsItselfNamesTheGroup(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+
+	team := k.Supergroup(-1003, "Team")
+	info, _ := k.world.info(team.ID())
+	said := k.world.add(team.ID(), models.Message{SenderChat: &info, AuthorSignature: "Ops", Text: "meeting moved"})
+
+	forwarded, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID: otherChatID, FromChatID: team.ID(), MessageID: said.ID,
+	})
+	if err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	origin := forwarded.ForwardOrigin
+	if origin == nil || origin.MessageOriginChat == nil || origin.MessageOriginChat.SenderChat.ID != team.ID() {
+		t.Fatalf("origin = %+v, want the group as the chat it came from", origin)
+	}
+	if sig := origin.MessageOriginChat.AuthorSignature; sig == nil || *sig != "Ops" {
+		t.Errorf("signature = %v, want the admin's signature carried", sig)
+	}
+	if got := k.History(otherChatID)[0].ForwardedFrom; got != "Team" {
+		t.Errorf("forwarded from %q, want the group's title", got)
+	}
+}
+
+func TestAForwardedPostKeepsItsSignature(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+
+	news := k.Channel(-1002, "Releases")
+	post := k.world.add(news.ID(), models.Message{AuthorSignature: "Ada", Text: "v1 is out"})
+
+	forwarded, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID: otherChatID, FromChatID: news.ID(), MessageID: post.ID,
+	})
+	if err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	channel := forwarded.ForwardOrigin.MessageOriginChannel
+	if channel == nil || channel.MessageID != post.ID || channel.AuthorSignature == nil || *channel.AuthorSignature != "Ada" {
+		t.Errorf("origin = %+v, want the post and who signed it", forwarded.ForwardOrigin)
+	}
+	if forwarded.AuthorSignature != "" {
+		t.Errorf("signature = %q, want it left on the origin, not on the bot's message", forwarded.AuthorSignature)
+	}
+}
+
+func TestEveryOriginNamesWhereItBegan(t *testing.T) {
+	cases := map[string]*models.MessageOrigin{
+		"Ada Lovelace": {Type: models.MessageOriginTypeUser, MessageOriginUser: &models.MessageOriginUser{
+			SenderUser: models.User{FirstName: "Ada", LastName: "Lovelace"},
+		}},
+		"Anonymous": {Type: models.MessageOriginTypeHiddenUser, MessageOriginHiddenUser: &models.MessageOriginHiddenUser{
+			SenderUserName: "Anonymous",
+		}},
+		"Team": {Type: models.MessageOriginTypeChat, MessageOriginChat: &models.MessageOriginChat{
+			SenderChat: models.Chat{Title: "Team"},
+		}},
+		"Releases": {Type: models.MessageOriginTypeChannel, MessageOriginChannel: &models.MessageOriginChannel{
+			Chat: models.Chat{Title: "Releases"},
+		}},
+	}
+	for want, origin := range cases {
+		if got := forwardedFrom(origin); got != want {
+			t.Errorf("forwardedFrom(%s) = %q, want %q", origin.Type, got, want)
+		}
 	}
 }
 

@@ -85,13 +85,16 @@ func (s *styled) finish() (string, []models.MessageEntity, error) {
 	if len(s.stack) > 0 {
 		return "", nil, cantParse("can't find end of " + string(s.stack[len(s.stack)-1].kind) + " entity")
 	}
-	slices.SortStableFunc(s.done, func(a, b models.MessageEntity) int {
-		if a.Offset != b.Offset {
-			return a.Offset - b.Offset
-		}
-		return b.Length - a.Length
-	})
+	slices.SortStableFunc(s.done, outermostFirst)
 	return s.text.String(), s.done, nil
+}
+
+// Where two spans start together the longer one opens first, so they nest.
+func outermostFirst(a, b models.MessageEntity) int {
+	if a.Offset != b.Offset {
+		return a.Offset - b.Offset
+	}
+	return b.Length - a.Length
 }
 
 func styleOf(text, mode string) (string, []models.MessageEntity, error) {
@@ -392,13 +395,7 @@ func markdownOf(text string, entities []models.MessageEntity) string {
 	if len(marked) == 0 {
 		return text
 	}
-	// Outermost first where two start together, so the wrappers nest.
-	slices.SortStableFunc(marked, func(a, b models.MessageEntity) int {
-		if a.Offset != b.Offset {
-			return a.Offset - b.Offset
-		}
-		return b.Length - a.Length
-	})
+	slices.SortStableFunc(marked, outermostFirst)
 
 	opens, shuts := map[int][]models.MessageEntity{}, map[int][]models.MessageEntity{}
 	for _, e := range marked {
@@ -498,9 +495,56 @@ func (p params) styled(field, marked string) (string, []models.MessageEntity, er
 
 func styledText(text, mode string, given []models.MessageEntity) (string, []models.MessageEntity, error) {
 	if len(given) > 0 {
-		return text, given, nil
+		entities, err := fitEntities(text, given)
+		return text, entities, err
 	}
 	return styleOf(text, mode)
+}
+
+const farthestEntity = 1000000
+
+// fitEntities holds described spans to the text the way Telegram does: one it
+// cannot measure is refused, but one that runs past the end is cut short there,
+// and one that starts there or covers nothing is dropped without a word.
+func fitEntities(text string, given []models.MessageEntity) ([]models.MessageEntity, error) {
+	for _, e := range given {
+		if e.Offset < 0 || e.Offset > farthestEntity {
+			return nil, requestError("Receive an entity with incorrect offset " + strconv.Itoa(e.Offset))
+		}
+		if e.Length < 0 || e.Length > farthestEntity {
+			return nil, requestError("Receive an entity with incorrect length " + strconv.Itoa(e.Length))
+		}
+	}
+
+	units := utf16.Encode([]rune(text))
+	fitted := make([]models.MessageEntity, 0, len(given))
+	for _, e := range given {
+		if e.Length == 0 || e.Offset >= len(units) {
+			continue
+		}
+		e.Length = min(e.Length, len(units)-e.Offset)
+		if halves(units, e.Offset) {
+			return nil, requestError("Entity begins in a middle of a UTF-16 symbol at byte offset " + bytesThrough(units, e.Offset))
+		}
+		if halves(units, e.Offset+e.Length) {
+			return nil, requestError("Entity beginning at UTF-16 offset " + strconv.Itoa(e.Offset) +
+				" ends in a middle of a UTF-16 symbol at byte offset " + bytesThrough(units, e.Offset+e.Length))
+		}
+		fitted = append(fitted, e)
+	}
+	slices.SortStableFunc(fitted, outermostFirst)
+	return fitted, nil
+}
+
+// halves is whether a span edge at this unit falls between the two halves of
+// one character, which the text has no place for.
+func halves(units []uint16, at int) bool {
+	return at > 0 && at < len(units) && units[at] >= 0xDC00 && units[at] <= 0xDFFF
+}
+
+// Telegram counts the split character as read, so the offset it names is past it.
+func bytesThrough(units []uint16, at int) string {
+	return strconv.Itoa(len(string(utf16.Decode(units[:at+1]))))
 }
 
 // Counted once the markup is off, in the UTF-16 units entities are measured in.

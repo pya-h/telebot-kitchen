@@ -632,7 +632,10 @@ Spans are measured the way Telegram measures them, in UTF-16 code units, so an
 emoji ahead of a word still finds the word. Entities the bot describes
 outright win over a parse mode, as they do live, and markup the kitchen cannot
 read is refused the way Telegram refuses it — an unclosed `*`, a crossing pair,
-a tag Telegram has no meaning for.
+a tag Telegram has no meaning for. Described entities are held to the text as
+Telegram holds them: a negative offset or length, or a span edge between the two
+halves of an emoji, is refused; a span running past the end is cut short there,
+and one starting past it, or covering nothing, is dropped without an error.
 
 Length is counted the same way, once the markup is off, so `*bold*` costs four: a
 message's text holds 4096 (`message is too long`) and a caption 1024 (`message
@@ -994,9 +997,11 @@ record with the refusal against it.
 
 `forwardMessage` and `copyMessage` are modelled down to their return types: a
 forward comes back as a message, a copy as a bare id. A forward carries where it
-came from — a person, or the channel that published it — and loses its inline
-keyboard; a copy carries neither, and takes only the caption and keyboard the
-call gives it.
+came from — a person, a group speaking as itself, or the channel that published
+it — and keeps an inline keyboard only while every button on it is a link; one
+button that calls back to the bot takes the whole keyboard down. A copy carries
+neither, and takes only the caption and keyboard the call gives it. One part of
+an album, forwarded or copied on its own, arrives outside any album.
 
 `ForwardedFrom` is what tells them apart on the receiving screen:
 

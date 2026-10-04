@@ -214,30 +214,99 @@ func TestAnEditThatOnlyRestylesIsStillAnEdit(t *testing.T) {
 	}
 }
 
-func TestASpanThatIsNotThereIsIgnored(t *testing.T) {
+func TestASpanPastTheEndIsCutShortThere(t *testing.T) {
 	k := New(t)
 	b := newClient(t, k)
 	ada := k.User(7, Started())
 
-	b.SendMessage(context.Background(), &bot.SendMessageParams{
+	sent, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
 		ChatID: ada.ID(),
 		Text:   "short",
 		Entities: []models.MessageEntity{
-			{Type: models.MessageEntityTypeBold, Offset: 0, Length: 99},
-			{Type: models.MessageEntityTypeCode, Offset: -1, Length: 2},
+			{Type: models.MessageEntityTypeBold, Offset: 2, Length: 99},
+			{Type: models.MessageEntityTypeCode, Offset: 5, Length: 2},
+			{Type: models.MessageEntityTypeUnderline, Offset: 1, Length: 0},
 			{Type: models.MessageEntityTypeItalic, Offset: 0, Length: 5},
 		},
 	})
+	if err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if len(sent.Entities) != 2 {
+		t.Errorf("sent = %+v, want the bot told of the two spans that stayed", sent.Entities)
+	}
 
 	screen := ada.Screen()
-	if screen.Text != "short" {
-		t.Errorf("text = %q, want it left alone", screen.Text)
+	if got := kinds(screen.Entities); !slices.Equal(got, []string{"italic:short", "bold:ort"}) {
+		t.Errorf("entities = %v, want the overrun cut short and the empty spans gone", got)
 	}
-	if got := kinds(screen.Entities); !slices.Equal(got, []string{"italic:short"}) {
-		t.Errorf("entities = %v, want only the span that is really there", got)
+	if got := screen.String(); got != "_sh**ort**_" {
+		t.Errorf("screen = %q, want both spans shown", got)
 	}
-	if got := screen.String(); got != "_short_" {
-		t.Errorf("screen = %q, want only the span that is really there", got)
+}
+
+func TestASpanThatCannotBeMeasuredIsRefused(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ada := k.User(7, Started())
+
+	cases := []struct {
+		name   string
+		text   string
+		entity models.MessageEntity
+		want   string
+	}{
+		{"before the start", "short", models.MessageEntity{Offset: -1, Length: 2}, "incorrect offset -1"},
+		{"of negative length", "short", models.MessageEntity{Offset: 1, Length: -2}, "incorrect length -2"},
+		{"opening inside an emoji", "a😀b", models.MessageEntity{Offset: 2, Length: 2}, "Entity begins in a middle of a UTF-16 symbol at byte offset 5"},
+		{"closing inside an emoji", "a😀b", models.MessageEntity{Offset: 0, Length: 2}, "Entity beginning at UTF-16 offset 0 ends in a middle of a UTF-16 symbol at byte offset 5"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.entity.Type = models.MessageEntityTypeBold
+			_, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
+				ChatID: ada.ID(), Text: c.text, Entities: []models.MessageEntity{c.entity},
+			})
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("err = %v, want %q", err, c.want)
+			}
+		})
+	}
+	if got := ada.History(); len(got) != 0 {
+		t.Errorf("chat = %v, want nothing sent", got)
+	}
+}
+
+func TestASpanAroundAnEmojiCountsItTwice(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ada := k.User(7, Started())
+
+	if _, err := b.SendMessage(context.Background(), &bot.SendMessageParams{
+		ChatID:   ada.ID(),
+		Text:     "سلام 😀 دوست",
+		Entities: []models.MessageEntity{{Type: models.MessageEntityTypeBold, Offset: 5, Length: 2}},
+	}); err != nil {
+		t.Fatalf("SendMessage: %v", err)
+	}
+	if got := kinds(ada.Screen().Entities); !slices.Equal(got, []string{"bold:😀"}) {
+		t.Errorf("entities = %v, want the emoji alone", got)
+	}
+}
+
+func TestACaptionSpanIsHeldToTheCaption(t *testing.T) {
+	k := New(t)
+	b := newClient(t, k)
+	ada := k.User(7, Started())
+
+	_, err := b.SendPhoto(context.Background(), &bot.SendPhotoParams{
+		ChatID:          ada.ID(),
+		Photo:           &models.InputFileString{Data: k.Upload("photo", "", nil).ID},
+		Caption:         "lunch",
+		CaptionEntities: []models.MessageEntity{{Type: models.MessageEntityTypeBold, Offset: -3, Length: 2}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "incorrect offset -3") {
+		t.Errorf("err = %v, want the caption span refused", err)
 	}
 }
 
