@@ -115,6 +115,11 @@ func TestAFormattedCommandIsStillACommand(t *testing.T) {
 	if spans := spans((*got)[1].Text, (*got)[1].Entities); !slices.Equal(spans, []string{"italic:/start now", "bot_command:/start"}) {
 		t.Errorf("spans = %v, want the italic around the command, outermost first", spans)
 	}
+
+	k.User(7).SendFormatted(Plain("/start", Span{Kind: "bot_command", Length: 6}))
+	if spans := spans((*got)[2].Text, (*got)[2].Entities); !slices.Equal(spans, []string{"bot_command:/start"}) {
+		t.Errorf("spans = %v, want the command marked once", spans)
+	}
 }
 
 func TestAMemberCaptionsAFileWithFormatting(t *testing.T) {
@@ -206,6 +211,7 @@ func TestAFormattingMistakeIsTheTestsOwn(t *testing.T) {
 		`cannot send that caption`: func(m *Member) {
 			m.SendFile(Photo("a.jpg", nil, "").Captioned(Plain("hi", Span{Kind: "bold", Length: 3})))
 		},
+		`never built`: func(m *Member) { m.SendFile(Attachment{}) },
 		`cannot send that album`: func(m *Member) {
 			m.SendAlbum(Photo("a.jpg", nil, "ok"), Photo("b.jpg", nil, "").Captioned(MarkdownV2("*open")))
 		},

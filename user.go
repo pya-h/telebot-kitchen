@@ -182,7 +182,10 @@ func commandEntities(text string) []models.MessageEntity {
 // A client marks a leading command whatever else the text carries.
 func withCommand(text string, entities []models.MessageEntity) []models.MessageEntity {
 	command := commandEntities(text)
-	if len(command) == 0 {
+	marked := slices.ContainsFunc(entities, func(e models.MessageEntity) bool {
+		return e.Type == models.MessageEntityTypeBotCommand && e.Offset == 0
+	})
+	if len(command) == 0 || marked {
 		return entities
 	}
 	merged := append(command, entities...)

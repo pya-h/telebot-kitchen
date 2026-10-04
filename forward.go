@@ -38,6 +38,9 @@ func (o Origin) resolve(k *Kitchen) (*models.MessageOrigin, error) {
 		return k.originOf(models.Message{Date: date, From: &author}), nil
 
 	case o.chat != nil:
+		if o.chat.kitchen != k {
+			return nil, fmt.Errorf("chat %d belongs to another kitchen", o.chat.id)
+		}
 		info, _ := k.world.info(o.chat.id)
 		channel := info.Type == models.ChatTypeChannel
 		switch {
@@ -82,9 +85,15 @@ func (m *Member) Forward(msgs ...Message) {
 
 	sources := make([]models.Message, len(msgs))
 	parts := map[string]int{}
+	picked := map[[2]int64]bool{}
 	for i, msg := range msgs {
+		at := [2]int64{msg.ChatID, int64(msg.ID)}
+		if picked[at] {
+			k.tb.Errorf("kitchen: %s picked message %d twice, and a client selects a message once", m, msg.ID)
+			return
+		}
+		picked[at] = true
 		source, found := k.world.message(msg.ChatID, msg.ID)
-		label, _ := mediaOf(&source)
 		switch {
 		case !found:
 			k.tb.Errorf("kitchen: %s cannot forward message %d of chat %d, which is not there", m, msg.ID, msg.ChatID)
@@ -95,7 +104,7 @@ func (m *Member) Forward(msgs ...Message) {
 		case source.Poll != nil:
 			k.tb.Errorf("kitchen: %s cannot forward a poll, which the kitchen does not model", m)
 			return
-		case source.Text == "" && label == "":
+		case !forwardsAtAll(source):
 			k.tb.Errorf("kitchen: %s cannot forward message %d, a service message Telegram does not forward", m, msg.ID)
 			return
 		}

@@ -199,6 +199,9 @@ func TestAForwardCopiedOnArrivesUncredited(t *testing.T) {
 	if got := kinds(copied.Entities); !slices.Equal(got, []string{"italic:Forwarded by Ada"}) {
 		t.Errorf("copy entities = %v, want only what the bot gave", got)
 	}
+	if copied.Keyboard != nil {
+		t.Errorf("copy keyboard = %v, want an empty one to leave none", copied.Keyboard)
+	}
 	if copied.FileID != forwarded.FileID {
 		t.Errorf("copy file = %q, want the forwarded photo's %q", copied.FileID, forwarded.FileID)
 	}
@@ -341,7 +344,13 @@ func TestAForwardMistakeIsTheTestsOwn(t *testing.T) {
 			m.ForwardFile(FromHiddenUser("Anon"), Sticker("s.webp", nil).Captioned(Plain("hi")))
 		},
 		`nothing to forward`: func(k *Kitchen, m *Member) { m.Forward() },
-		`empty message`:      func(k *Kitchen, m *Member) { m.ForwardText(FromHiddenUser("Anon"), Plain("")) },
+		`picked message 1 twice`: func(k *Kitchen, m *Member) {
+			team := k.Group(-1003, "Team")
+			k.User(8).In(team).SendAlbum(Photo("1.jpg", nil, ""), Photo("2.jpg", nil, ""))
+			m.Forward(team.History()[0], team.History()[0])
+		},
+		`never built`:   func(k *Kitchen, m *Member) { m.ForwardFile(FromHiddenUser("Anon"), Attachment{}) },
+		`empty message`: func(k *Kitchen, m *Member) { m.ForwardText(FromHiddenUser("Anon"), Plain("")) },
 	}
 	for want, forward := range cases {
 		t.Run(want, func(t *testing.T) {
@@ -381,5 +390,40 @@ func TestNoTwoForwardsShareAnOrigin(t *testing.T) {
 	twice, _ := k.world.message(stored.ChatID, stored.ID)
 	if once.ForwardOrigin.MessageOriginHiddenUser == twice.ForwardOrigin.MessageOriginHiddenUser {
 		t.Errorf("two reads of one message share its origin")
+	}
+}
+
+func TestAnOriginFromAnotherKitchenIsRefused(t *testing.T) {
+	elsewhere := New(t).Channel(-1002, "Releases")
+
+	tb := &recordingTB{}
+	defer tb.close()
+	k := New(tb)
+	got := heard(k)
+	k.User(7).ForwardText(FromChannel(elsewhere, 1, ""), Plain("hi"))
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "belongs to another kitchen") {
+		t.Errorf("errors = %v, want the chat placed in its own kitchen", errs)
+	}
+	if len(*got) != 0 {
+		t.Errorf("the bot heard %v, want nothing", *got)
+	}
+}
+
+func TestNobodyEditsAForward(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+	k := New(tb)
+	heard(k)
+	ada := k.User(7)
+
+	ada.ForwardText(FromHiddenUser("Anon"), Plain("as it was"))
+	ada.Edit(ada.Screen().Message, "rewritten")
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "Telegram lets nobody edit") {
+		t.Errorf("errors = %v, want the edit refused", errs)
+	}
+	if got := ada.Screen().Text; got != "as it was" {
+		t.Errorf("text = %q, want the forward untouched", got)
 	}
 }

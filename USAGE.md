@@ -1035,8 +1035,10 @@ record with the refusal against it.
 `forwardMessage` and `copyMessage` are modelled down to their return types: a
 forward comes back as a message, a copy as a bare id. A forward carries where it
 came from — a person, a group speaking as itself, or the channel that published
-it — and keeps an inline keyboard only while every button on it is a link; one
-button that calls back to the bot takes the whole keyboard down. A copy carries
+it — and keeps an inline keyboard only while every button on it is a link or a
+copy button (a sign-in button arrives as a plain link); one button that calls
+back to the bot takes the whole keyboard down. A service message — a join, a
+pin — is refused with `message can't be forwarded`. A copy carries
 neither, and takes only the caption and keyboard the call gives it. One part of
 an album, forwarded or copied on its own, arrives outside any album.
 

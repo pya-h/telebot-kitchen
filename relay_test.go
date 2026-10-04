@@ -408,3 +408,37 @@ func TestACopyCarriesTheKeyboardUnderTheComposeBox(t *testing.T) {
 		t.Errorf("menu = %v, want the copy to have raised it", ada.Menu())
 	}
 }
+
+func TestAServiceMessageIsNotForwarded(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	team := k.Group(-1003, "Team")
+	k.User(8).In(team).Join()
+
+	_, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID: otherChatID, FromChatID: team.ID(), MessageID: team.History()[0].ID,
+	})
+	if err == nil || !strings.Contains(err.Error(), "message can't be forwarded") {
+		t.Errorf("err = %v, want the join refused", err)
+	}
+	if got := k.History(otherChatID); len(got) != 0 {
+		t.Errorf("chat = %v, want nothing forwarded", got)
+	}
+}
+
+// An invoice carries no text or media, and is still something to forward.
+func TestAnInvoiceIsForwarded(t *testing.T) {
+	k := talking(t)
+	b := newClient(t, k)
+	invoiceFor(t, b, testChatID)
+
+	if _, err := b.ForwardMessage(context.Background(), &bot.ForwardMessageParams{
+		ChatID: otherChatID, FromChatID: testChatID, MessageID: k.History(testChatID)[0].ID,
+	}); err != nil {
+		t.Fatalf("ForwardMessage: %v", err)
+	}
+	if got := k.History(otherChatID); len(got) != 1 || got[0].Event != "invoice" {
+		t.Errorf("chat = %v, want the invoice forwarded", got)
+	}
+}

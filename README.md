@@ -63,6 +63,9 @@ updates by webhook or through a "handle one update" entry point.
 - **Rich input** — text, commands, locations, and every kind of media a chat
   carries: photos, voice, audio, video, animations, documents, stickers and
   video notes, in both directions.
+- **Forwards and formatting from users** — a user forwards into the bot,
+  credited to a person, a hidden person, a group or a channel, and writes
+  bold, links, mentions and the rest the way a client marks them up.
 - **Screen & transcript rendering** — print a chat (inline keyboard and all) as
   text for debugging, golden tests, or human-readable acceptance evidence.
 - **Markup, read the way Telegram reads it** — `MarkdownV2`, `Markdown` and

@@ -9,7 +9,10 @@ import (
 	"github.com/go-telegram/bot/models"
 )
 
-var errNotTheirs = errors.New("kitchen: not the member's own message")
+var (
+	errNotTheirs = errors.New("kitchen: not the member's own message")
+	errForwarded = errors.New("kitchen: a forward")
+)
 
 // Member is a user inside one chat, with their own place in what was said there.
 type Member struct {
@@ -138,13 +141,18 @@ func (m *Member) SendFile(a Attachment) {
 
 // attached is the message a file goes out as, once its caption reads.
 func (m *Member) attached(a Attachment) (models.Message, bool) {
+	put, known := fileKinds[a.kind]
+	if !known {
+		m.kitchen().tb.Errorf("kitchen: %s cannot send an attachment that was never built: make it with Photo, Voice, Sticker and the like", m)
+		return models.Message{}, false
+	}
 	text, entities, err := a.caption.resolve()
 	if err != nil {
 		m.kitchen().tb.Errorf("kitchen: %s cannot send that caption: %v", m, err)
 		return models.Message{}, false
 	}
 	sent := models.Message{Caption: text, CaptionEntities: entities}
-	fileKinds[a.kind](&sent, m.kitchen().files.issue(a.kind, a.name, a.data))
+	put(&sent, m.kitchen().files.issue(a.kind, a.name, a.data))
 	if label, captioned := mediaOf(&sent); !captioned && text != "" {
 		m.kitchen().tb.Errorf("kitchen: %s cannot caption a %s, which Telegram shows without one", m, label)
 		return models.Message{}, false
@@ -239,12 +247,18 @@ func (m *Member) Edit(sent Message, text string) Message {
 		if msg.From == nil || msg.From.ID != m.user.id {
 			return errNotTheirs
 		}
+		if msg.ForwardOrigin != nil {
+			return errForwarded
+		}
 		msg.Text, msg.Entities = text, commandEntities(text)
 		return nil
 	})
 	switch {
 	case !found:
 		m.kitchen().tb.Errorf("kitchen: %s has no message %d to edit", m, sent.ID)
+		return Message{}
+	case errors.Is(err, errForwarded):
+		m.kitchen().tb.Errorf("kitchen: message %d is a forward, which Telegram lets nobody edit", sent.ID)
 		return Message{}
 	case err != nil:
 		m.kitchen().tb.Errorf("kitchen: message %d is not %s's to edit", sent.ID, m)

@@ -8,10 +8,20 @@ func (k *Kitchen) forwardMessage(p params) (any, error) {
 		return nil, err
 	}
 
+	if !forwardsAtAll(source) {
+		return nil, requestError("message can't be forwarded")
+	}
 	sender := k.botUser()
 	forwarded := forwardedAs(source, k.originOf(source))
 	forwarded.From = &sender
 	return k.relaid(target, forwarded), nil
+}
+
+// forwardsAtAll is whether the message carries something of its own: a service
+// message only says what happened in the chat, and Telegram forwards none.
+func forwardsAtAll(m models.Message) bool {
+	label, _ := mediaOf(&m)
+	return m.Text != "" || label != "" || m.Invoice != nil
 }
 
 // forwardedAs is the message a forward lands as: the same content, under the
