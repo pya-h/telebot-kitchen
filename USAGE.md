@@ -147,7 +147,8 @@ in a chat where they blocked the bot is a test error.
 | `SendPhoto(name, data, caption)` | an upload the bot can read back through `k.File` |
 | `SendVoice` / `SendAudio` / `SendVideo` / `SendAnimation` / `SendDocument` | the same shape, one per kind |
 | `SendSticker(name, data)` / `SendVideoNote(name, data)` | the two kinds Telegram allows no caption on |
-| `SendFile(attachment)` | any of the captioned kinds, built with `kitchen.Photo`, `Voice`, `Audio`, `Video`, `Animation` or `Document` |
+| `SendFile(attachment)` | any file, built with `kitchen.Photo`, `Voice`, `Audio`, `Video`, `Animation`, `Document`, `Sticker` or `VideoNote` |
+| `Forward(msgs...)` / `ForwardText(origin, f)` / `ForwardFile(origin, attachment)` / … | a forward into the chat ([Forwarding into the bot](#forwarding-into-the-bot)) |
 | `ShareLocation(lat, lng)` | a location message |
 | `ShareVenue(lat, lng, title, address)` | a place, which carries its coordinates too |
 | `ShareContact(phone, first, last)` | the contact the "share my number" key sends back |
@@ -1048,6 +1049,61 @@ if got := screen.String(); got != "(forwarded from Ada Lovelace) hello" {
 }
 ```
 
+### Forwarding into the bot
+
+A member forwards the way a client does: the bot is handed a message of its
+own in the member's chat, from the member, sent now, with `forward_origin`
+saying whom it is credited to. It is stored like anything the member typed, so
+the bot's `copyMessage` and `forwardMessage` find it, file ids included.
+
+`Forward` hands over messages already in the kitchen — a channel post, a group
+message, something the bot sent — with the origin worked out the way the bot's
+own `forwardMessage` works it out, keyboard rule included. Several parts of one
+album forwarded together become an album of their own; one part alone, none:
+
+```go
+post := news.Post("v1 is out")
+ada.Forward(post)
+```
+
+The other verbs hand over content nobody had to stage first, credited to one of
+Telegram's four kinds of origin:
+
+```go
+ada.ForwardText(kitchen.FromUser(carl), kitchen.Plain("from a person"))
+ada.ForwardText(kitchen.FromHiddenUser("Someone Private"), kitchen.Plain("from a hidden person"))
+ada.ForwardText(kitchen.FromChat(team, "Ops"), kitchen.Plain("from a group"))
+ada.ForwardText(kitchen.FromChannel(news, 42, "Ada"), kitchen.Plain("from a channel"))
+```
+
+They arrive as `user`, `hidden_user`, `chat` and `channel`, and `ForwardedFrom`
+shows each one: `Carl Gauss`, `Someone Private`, `Team`, `Releases`. `FromChat`
+takes a group or supergroup an admin spoke for anonymously, and `FromChannel`
+a channel and the id of its post; either signature may be empty. The original
+is dated now, since nothing earlier stands behind it.
+
+`ForwardFile(origin, attachment)` takes any of the attachments `SendFile` does,
+captioned or not, and `ForwardAlbum(origin, attachments...)`,
+`ForwardLocation` and `ForwardVenue` round out the kinds. Text and captions
+keep the formatting they were built with.
+
+`kitchen.HidesForwards()` is the privacy setting that credits a user by name
+alone. A forward of what they wrote — by a member, through `FromUser`, or by the
+bot's `forwardMessage` — arrives as `hidden_user` with their display name.
+
+A relay that copies a forward on is what makes a chat anonymous, and the copy
+carries no origin, while a forward of the same message still names the author:
+
+```go
+copied, again := bob.History()[0], bob.History()[1]
+if copied.ForwardedFrom != "" || !copied.FromBot {
+	t.Errorf("copy = %+v, want the bot's own photo under the new caption", copied)
+}
+if again.ForwardedFrom != "Carl Gauss" {
+	t.Errorf("forward forwarded from %q, want Carl still credited", again.ForwardedFrom)
+}
+```
+
 ## Rushes
 
 Concurrency breaks bots in ways one conversation never shows: a reply in the
@@ -1205,7 +1261,7 @@ of the same test produce the same ids, dates and transcripts.
 
 Options on `New`: `WithBotName`, `WithBotUsername`, `WithToken`, `WithStartTime`,
 `WithWaitTimeout`, `WithScrollback`. Options on `User`: `WithFullName`,
-`WithUsername`, `WithLanguage`.
+`WithUsername`, `WithLanguage`, `Started`, `HidesForwards`.
 
 ## Outside a test
 
@@ -1285,6 +1341,8 @@ it:
   `shipping_query` / `answerShippingQuery` are not modelled.
 - **Business connections.** `business_connection`, `business_message` and the
   rest are names a bot may register for, but no verb makes one.
+- **Forwarding a poll.** A member's `Forward` refuses one rather than hand the
+  bot a poll the kitchen would tally twice.
 - **Paid media**, `ForceReply`, and one-time or persistent reply keyboards.
 - **Methods with no answer yet:** `sendLocation` and live locations (`sendVenue`
   is there, and a user's `ShareLocation`), `leaveChat`, `setMyCommands` and

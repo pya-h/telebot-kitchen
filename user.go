@@ -13,7 +13,8 @@ type UserOption func(*userSetup)
 
 type userSetup struct {
 	Identity
-	started bool
+	started       bool
+	hidesForwards bool
 }
 
 type Identity struct {
@@ -35,6 +36,12 @@ func WithLanguage(code string) UserOption {
 	return func(s *userSetup) { s.LanguageCode = code }
 }
 
+// HidesForwards is the privacy setting that credits what others forward of
+// this user's by their name alone, with no link to their account.
+func HidesForwards() UserOption {
+	return func(s *userSetup) { s.hidesForwards = true }
+}
+
 // Started is a user who opened the bot's private chat before the test began.
 func Started() UserOption {
 	return func(s *userSetup) { s.started = true }
@@ -43,10 +50,11 @@ func Started() UserOption {
 type User struct {
 	*Member
 
-	kitchen *Kitchen
-	id      int64
-	info    Identity
-	shared  map[int64]*Member
+	kitchen       *Kitchen
+	id            int64
+	info          Identity
+	hidesForwards bool
+	shared        map[int64]*Member
 }
 
 // User returns the virtual user with this id, creating them on first mention.
@@ -70,11 +78,11 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 		u.Member = &Member{user: u, chat: &Chat{kitchen: k, id: id, kind: models.ChatTypePrivate}}
 		k.users[id] = u
 	}
-	setup := userSetup{Identity: u.info}
+	setup := userSetup{Identity: u.info, hidesForwards: u.hidesForwards}
 	for _, opt := range opts {
 		opt(&setup)
 	}
-	u.info = setup.Identity
+	u.info, u.hidesForwards = setup.Identity, setup.hidesForwards
 	k.world.join(id, u.telegram())
 	if setup.started {
 		k.world.start(id)
@@ -93,6 +101,13 @@ func (k *Kitchen) knownUser(id int64) (models.User, bool) {
 		return models.User{}, false
 	}
 	return u.telegram(), true
+}
+
+func (k *Kitchen) hidesForwards(id int64) bool {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	u, ok := k.users[id]
+	return ok && u.hidesForwards
 }
 
 // In returns this user inside a shared chat, with its own place in the

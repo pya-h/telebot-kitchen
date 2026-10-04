@@ -46,6 +46,15 @@ func Animation(name string, data []byte, caption string) Attachment {
 	return Attachment{"animation", name, data, Plain(caption)}
 }
 
+// A sticker and a video note carry no caption, so neither takes one.
+func Sticker(name string, data []byte) Attachment {
+	return Attachment{"sticker", name, data, Formatted{}}
+}
+
+func VideoNote(name string, data []byte) Attachment {
+	return Attachment{"video_note", name, data, Formatted{}}
+}
+
 func (a Attachment) Captioned(caption Formatted) Attachment {
 	a.caption = caption
 	return a
@@ -139,13 +148,19 @@ func (k *Kitchen) sendMediaGroup(p params) (any, error) {
 }
 
 func (m *Member) SendAlbum(files ...Attachment) {
+	if album, ok := m.album(files); ok {
+		m.sayAll(album...)
+	}
+}
+
+func (m *Member) album(files []Attachment) ([]models.Message, bool) {
 	kinds := make([]string, len(files))
 	for i, file := range files {
 		kinds[i] = file.kind
 	}
 	if why := grouped(kinds); why != "" {
 		m.kitchen().tb.Errorf("kitchen: %s cannot send that album: %s", m, why)
-		return
+		return nil, false
 	}
 
 	messages := make([]models.Message, len(files))
@@ -153,7 +168,7 @@ func (m *Member) SendAlbum(files ...Attachment) {
 		caption, entities, err := file.caption.resolve()
 		if err != nil {
 			m.kitchen().tb.Errorf("kitchen: %s cannot send that album: %v", m, err)
-			return
+			return nil, false
 		}
 		messages[i] = models.Message{Caption: caption, CaptionEntities: entities}
 	}
@@ -162,5 +177,5 @@ func (m *Member) SendAlbum(files ...Attachment) {
 		messages[i].MediaGroupID = album
 		albumKinds[file.kind](&messages[i], m.kitchen().files.issue(file.kind, file.name, file.data))
 	}
-	m.sayAll(messages...)
+	return messages, true
 }

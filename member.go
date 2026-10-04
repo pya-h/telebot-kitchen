@@ -103,49 +103,53 @@ func (m *Member) Press(label string) {
 }
 
 func (m *Member) SendPhoto(name string, data []byte, caption string) {
-	m.upload("photo", name, data, Plain(caption))
+	m.SendFile(Photo(name, data, caption))
 }
 
 func (m *Member) SendVoice(name string, data []byte, caption string) {
-	m.upload("voice", name, data, Plain(caption))
+	m.SendFile(Voice(name, data, caption))
 }
 
 func (m *Member) SendAudio(name string, data []byte, caption string) {
-	m.upload("audio", name, data, Plain(caption))
+	m.SendFile(Audio(name, data, caption))
 }
 
 func (m *Member) SendVideo(name string, data []byte, caption string) {
-	m.upload("video", name, data, Plain(caption))
+	m.SendFile(Video(name, data, caption))
 }
 
 func (m *Member) SendAnimation(name string, data []byte, caption string) {
-	m.upload("animation", name, data, Plain(caption))
+	m.SendFile(Animation(name, data, caption))
 }
 
 func (m *Member) SendDocument(name string, data []byte, caption string) {
-	m.upload("document", name, data, Plain(caption))
+	m.SendFile(Document(name, data, caption))
 }
 
-// A sticker and a video note carry no caption, so neither verb takes one.
-func (m *Member) SendSticker(name string, data []byte) {
-	m.upload("sticker", name, data, Formatted{})
+func (m *Member) SendSticker(name string, data []byte) { m.SendFile(Sticker(name, data)) }
+
+func (m *Member) SendVideoNote(name string, data []byte) { m.SendFile(VideoNote(name, data)) }
+
+func (m *Member) SendFile(a Attachment) {
+	if sent, ok := m.attached(a); ok {
+		m.say(sent)
+	}
 }
 
-func (m *Member) SendVideoNote(name string, data []byte) {
-	m.upload("video_note", name, data, Formatted{})
-}
-
-func (m *Member) SendFile(a Attachment) { m.upload(a.kind, a.name, a.data, a.caption) }
-
-func (m *Member) upload(kind, name string, data []byte, caption Formatted) {
-	text, entities, err := caption.resolve()
+// attached is the message a file goes out as, once its caption reads.
+func (m *Member) attached(a Attachment) (models.Message, bool) {
+	text, entities, err := a.caption.resolve()
 	if err != nil {
 		m.kitchen().tb.Errorf("kitchen: %s cannot send that caption: %v", m, err)
-		return
+		return models.Message{}, false
 	}
 	sent := models.Message{Caption: text, CaptionEntities: entities}
-	fileKinds[kind](&sent, m.kitchen().files.issue(kind, name, data))
-	m.say(sent)
+	fileKinds[a.kind](&sent, m.kitchen().files.issue(a.kind, a.name, a.data))
+	if label, captioned := mediaOf(&sent); !captioned && text != "" {
+		m.kitchen().tb.Errorf("kitchen: %s cannot caption a %s, which Telegram shows without one", m, label)
+		return models.Message{}, false
+	}
+	return sent, true
 }
 
 func (m *Member) ShareLocation(latitude, longitude float64) {

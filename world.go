@@ -600,6 +600,7 @@ func handed(m *models.Message) models.Message {
 		poll := copyPoll(m.Poll)
 		out.Poll = &poll
 	}
+	out.ForwardOrigin = copyOrigin(m.ForwardOrigin)
 	return out
 }
 

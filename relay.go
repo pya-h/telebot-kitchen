@@ -9,17 +9,23 @@ func (k *Kitchen) forwardMessage(p params) (any, error) {
 	}
 
 	sender := k.botUser()
-	forwarded := source
+	forwarded := forwardedAs(source, k.originOf(source))
 	forwarded.From = &sender
-	forwarded.ForwardOrigin = origin(source)
+	return k.relaid(target, forwarded), nil
+}
+
+// forwardedAs is the message a forward lands as: the same content, under the
+// origin it is credited to, sent by whoever forwards it.
+func forwardedAs(source models.Message, from *models.MessageOrigin) models.Message {
+	forwarded := source
+	forwarded.ForwardOrigin = from
 	forwarded.EditDate = 0
 	// Whose message it is now depends on where it lands, not on where it came from.
 	forwarded.SenderChat = nil
 	forwarded.AuthorSignature = ""
 	forwarded.MediaGroupID = ""
 	forwarded.ReplyMarkup = forwardable(source.ReplyMarkup)
-
-	return k.relaid(target, forwarded), nil
+	return forwarded
 }
 
 func (k *Kitchen) copyMessage(p params) (any, error) {
@@ -77,13 +83,31 @@ func (k *Kitchen) relayed(p params, what string) (source models.Message, target 
 	return source, target, nil
 }
 
+// originOf is origin as the author allows it: one who hides their account when
+// forwarded is credited by name alone.
+func (k *Kitchen) originOf(m models.Message) *models.MessageOrigin {
+	from := origin(m)
+	if m.ForwardOrigin != nil || from == nil || from.MessageOriginUser == nil {
+		return from
+	}
+	author := from.MessageOriginUser
+	if !k.hidesForwards(author.SenderUser.ID) {
+		return from
+	}
+	return &models.MessageOrigin{
+		Type: models.MessageOriginTypeHiddenUser,
+		MessageOriginHiddenUser: &models.MessageOriginHiddenUser{
+			Date:           author.Date,
+			SenderUserName: displayName(&author.SenderUser),
+		},
+	}
+}
+
 func origin(m models.Message) *models.MessageOrigin {
 	switch {
-	// Forwarding a forward still points at whoever wrote it. Copied, because the
-	// library writes the type back into the struct as it encodes one.
+	// Forwarding a forward still points at whoever wrote it.
 	case m.ForwardOrigin != nil:
-		carried := *m.ForwardOrigin
-		return &carried
+		return copyOrigin(m.ForwardOrigin)
 
 	case m.SenderChat != nil && m.SenderChat.Type == models.ChatTypeChannel:
 		return &models.MessageOrigin{
@@ -153,4 +177,28 @@ func forwardable(markup *models.InlineKeyboardMarkup) *models.InlineKeyboardMark
 		}
 	}
 	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}
+}
+
+// copyOrigin goes all the way down, because the library writes the type back
+// into whichever part it encodes.
+func copyOrigin(o *models.MessageOrigin) *models.MessageOrigin {
+	if o == nil {
+		return nil
+	}
+	out := *o
+	switch {
+	case o.MessageOriginUser != nil:
+		part := *o.MessageOriginUser
+		out.MessageOriginUser = &part
+	case o.MessageOriginHiddenUser != nil:
+		part := *o.MessageOriginHiddenUser
+		out.MessageOriginHiddenUser = &part
+	case o.MessageOriginChat != nil:
+		part := *o.MessageOriginChat
+		out.MessageOriginChat = &part
+	case o.MessageOriginChannel != nil:
+		part := *o.MessageOriginChannel
+		out.MessageOriginChannel = &part
+	}
+	return &out
 }
