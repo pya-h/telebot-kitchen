@@ -13,29 +13,42 @@ const (
 	maxAlbum = 10
 )
 
-// Attachment is one file in an album, made by Photo, Video, Audio or Document —
-// the four kinds Telegram groups.
+// Attachment is one file to send: on its own through SendFile, or in an album,
+// where only a photo, video, audio or document may travel.
 type Attachment struct {
 	kind    string
 	name    string
 	data    []byte
-	caption string
+	caption Formatted
 }
 
 func Photo(name string, data []byte, caption string) Attachment {
-	return Attachment{"photo", name, data, caption}
+	return Attachment{"photo", name, data, Plain(caption)}
 }
 
 func Video(name string, data []byte, caption string) Attachment {
-	return Attachment{"video", name, data, caption}
+	return Attachment{"video", name, data, Plain(caption)}
 }
 
 func Audio(name string, data []byte, caption string) Attachment {
-	return Attachment{"audio", name, data, caption}
+	return Attachment{"audio", name, data, Plain(caption)}
 }
 
 func Document(name string, data []byte, caption string) Attachment {
-	return Attachment{"document", name, data, caption}
+	return Attachment{"document", name, data, Plain(caption)}
+}
+
+func Voice(name string, data []byte, caption string) Attachment {
+	return Attachment{"voice", name, data, Plain(caption)}
+}
+
+func Animation(name string, data []byte, caption string) Attachment {
+	return Attachment{"animation", name, data, Plain(caption)}
+}
+
+func (a Attachment) Captioned(caption Formatted) Attachment {
+	a.caption = caption
+	return a
 }
 
 // grouped says why these kinds cannot travel together, and "" when they can.
@@ -135,10 +148,18 @@ func (m *Member) SendAlbum(files ...Attachment) {
 		return
 	}
 
-	album := m.kitchen().world.nextAlbum()
 	messages := make([]models.Message, len(files))
 	for i, file := range files {
-		messages[i] = models.Message{MediaGroupID: album, Caption: file.caption}
+		caption, entities, err := file.caption.resolve()
+		if err != nil {
+			m.kitchen().tb.Errorf("kitchen: %s cannot send that album: %v", m, err)
+			return
+		}
+		messages[i] = models.Message{Caption: caption, CaptionEntities: entities}
+	}
+	album := m.kitchen().world.nextAlbum()
+	for i, file := range files {
+		messages[i].MediaGroupID = album
 		albumKinds[file.kind](&messages[i], m.kitchen().files.issue(file.kind, file.name, file.data))
 	}
 	m.sayAll(messages...)

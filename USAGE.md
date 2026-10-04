@@ -141,11 +141,13 @@ in a chat where they blocked the bot is a test error.
 | --- | --- |
 | `Send(text)` | a text message, with command entities parsed as Telegram parses them |
 | `SendCommand(name, args...)` | `/name arg arg`, entities included |
+| `SendFormatted(f)` | text with formatting, written as markup or with its spans given ([below](#formatted-text)) |
 | `Tap(labelOrData)` | presses an inline button by its visible label or its callback data |
 | `Press(label)` | pushes a key on the reply keyboard |
 | `SendPhoto(name, data, caption)` | an upload the bot can read back through `k.File` |
 | `SendVoice` / `SendAudio` / `SendVideo` / `SendAnimation` / `SendDocument` | the same shape, one per kind |
 | `SendSticker(name, data)` / `SendVideoNote(name, data)` | the two kinds Telegram allows no caption on |
+| `SendFile(attachment)` | any of the captioned kinds, built with `kitchen.Photo`, `Voice`, `Audio`, `Video`, `Animation` or `Document` |
 | `ShareLocation(lat, lng)` | a location message |
 | `ShareVenue(lat, lng, title, address)` | a place, which carries its coordinates too |
 | `ShareContact(phone, first, last)` | the contact the "share my number" key sends back |
@@ -175,6 +177,40 @@ ada.Expect(
 
 By default only the newest keyboard in the chat answers a tap. `WithScrollback()`
 lets a tap reach buttons on older messages.
+
+### Formatted text
+
+A client turns what a user styles into entities, and so does `SendFormatted`. The
+markup is read by the same parser the kitchen reads a bot's `parse_mode` with:
+
+```go
+ada.SendFormatted(kitchen.HTML("سلام <b>دوست</b> 😀"))
+ada.SendFormatted(kitchen.MarkdownV2("*bold* ||secret|| `code`"))
+```
+
+`kitchen.Plain` gives the spans outright, for the kinds no markup reaches and the
+edge cases a test wants exactly. Offsets and lengths are in UTF-16 code units, as
+Telegram counts them, so an emoji counts as two:
+
+```go
+ada.SendFormatted(kitchen.Plain("see this, ask Bob",
+	kitchen.Span{Kind: "text_link", Offset: 0, Length: 8, URL: "https://example.com"},
+	kitchen.Span{Kind: "text_mention", Offset: 14, Length: 3, User: bob},
+))
+```
+
+A `custom_emoji` span takes `CustomEmoji`, and a `pre` may take `Language`. A
+caption is formatted the same way, on the attachment it belongs to, whether it
+goes alone through `SendFile` or in an album:
+
+```go
+ada.SendFile(kitchen.Photo("lunch.jpg", data, "").Captioned(kitchen.MarkdownV2("lunch at *Rossi*")))
+```
+
+A leading `/command` keeps its `bot_command` entity alongside the formatting.
+Markup that does not parse, a kind Telegram has no name for, a link without its
+URL, or a span outside the text or through the middle of an emoji is a mistake
+in the test, since no client sends one, and fails it.
 
 ### The other keyboard
 
@@ -430,7 +466,7 @@ sent[0].Album == sent[1].Album   // and empty on anything sent on its own
 ```
 
 A member sends one back with `SendAlbum`, built from the four kinds Telegram
-groups:
+groups, each caption plain or `Captioned`:
 
 ```go
 ada.SendAlbum(

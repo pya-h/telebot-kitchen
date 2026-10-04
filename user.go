@@ -2,6 +2,7 @@ package kitchen
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -161,6 +162,17 @@ func commandEntities(text string) []models.MessageEntity {
 		Type:   models.MessageEntityTypeBotCommand,
 		Length: utf16Len(command),
 	}}
+}
+
+// A client marks a leading command whatever else the text carries.
+func withCommand(text string, entities []models.MessageEntity) []models.MessageEntity {
+	command := commandEntities(text)
+	if len(command) == 0 {
+		return entities
+	}
+	merged := append(command, entities...)
+	slices.SortStableFunc(merged, outermostFirst)
+	return merged
 }
 
 // Telegram measures entity offsets and lengths in UTF-16 code units, so any

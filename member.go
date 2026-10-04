@@ -27,6 +27,19 @@ func (m *Member) Send(text string) {
 	m.say(models.Message{Text: text, Entities: commandEntities(text)})
 }
 
+func (m *Member) SendFormatted(f Formatted) {
+	text, entities, err := f.resolve()
+	switch {
+	case err != nil:
+		m.kitchen().tb.Errorf("kitchen: %s cannot send that: %v", m, err)
+		return
+	case text == "":
+		m.kitchen().tb.Errorf("kitchen: %s cannot send an empty message, and no client lets them", m)
+		return
+	}
+	m.say(models.Message{Text: text, Entities: withCommand(text, entities)})
+}
+
 func (m *Member) SendCommand(name string, args ...string) {
 	text := "/" + strings.TrimPrefix(name, "/")
 	if len(args) > 0 {
@@ -90,40 +103,47 @@ func (m *Member) Press(label string) {
 }
 
 func (m *Member) SendPhoto(name string, data []byte, caption string) {
-	m.upload("photo", name, data, caption)
+	m.upload("photo", name, data, Plain(caption))
 }
 
 func (m *Member) SendVoice(name string, data []byte, caption string) {
-	m.upload("voice", name, data, caption)
+	m.upload("voice", name, data, Plain(caption))
 }
 
 func (m *Member) SendAudio(name string, data []byte, caption string) {
-	m.upload("audio", name, data, caption)
+	m.upload("audio", name, data, Plain(caption))
 }
 
 func (m *Member) SendVideo(name string, data []byte, caption string) {
-	m.upload("video", name, data, caption)
+	m.upload("video", name, data, Plain(caption))
 }
 
 func (m *Member) SendAnimation(name string, data []byte, caption string) {
-	m.upload("animation", name, data, caption)
+	m.upload("animation", name, data, Plain(caption))
 }
 
 func (m *Member) SendDocument(name string, data []byte, caption string) {
-	m.upload("document", name, data, caption)
+	m.upload("document", name, data, Plain(caption))
 }
 
 // A sticker and a video note carry no caption, so neither verb takes one.
 func (m *Member) SendSticker(name string, data []byte) {
-	m.upload("sticker", name, data, "")
+	m.upload("sticker", name, data, Formatted{})
 }
 
 func (m *Member) SendVideoNote(name string, data []byte) {
-	m.upload("video_note", name, data, "")
+	m.upload("video_note", name, data, Formatted{})
 }
 
-func (m *Member) upload(kind, name string, data []byte, caption string) {
-	sent := models.Message{Caption: caption}
+func (m *Member) SendFile(a Attachment) { m.upload(a.kind, a.name, a.data, a.caption) }
+
+func (m *Member) upload(kind, name string, data []byte, caption Formatted) {
+	text, entities, err := caption.resolve()
+	if err != nil {
+		m.kitchen().tb.Errorf("kitchen: %s cannot send that caption: %v", m, err)
+		return
+	}
+	sent := models.Message{Caption: text, CaptionEntities: entities}
 	fileKinds[kind](&sent, m.kitchen().files.issue(kind, name, data))
 	m.say(sent)
 }
