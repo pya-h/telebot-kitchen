@@ -99,8 +99,8 @@ func (k *Kitchen) getChatMember(p params) (any, error) {
 		return nil, err
 	}
 
-	if _, found := k.world.info(chatID); !found {
-		return nil, requestError("chat not found")
+	if err := k.world.mayReadMembers(chatID, userID); err != nil {
+		return nil, err
 	}
 	if member, found := k.world.standingOf(chatID, userID); found {
 		return &member, nil

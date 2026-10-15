@@ -125,6 +125,43 @@ func (w *world) restandBot(chatID int64, to standing) (models.ChatMember, models
 	return was.chatMember(), to.chatMember(), c.info
 }
 
+// standingFor is a member's standing as the kitchen keeps it; somebody never
+// seen in the chat stands outside it.
+func (w *world) standingFor(chatID, userID int64) (standing, bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	if c, ok := w.chats[chatID]; ok {
+		if s, ok := c.members[userID]; ok {
+			return *s, true
+		}
+	}
+	return standing{status: models.ChatMemberTypeLeft}, false
+}
+
+// mayReadMembers is why the bot may not read somebody else's standing here: it
+// is out of the chat, or it is in a channel it does not administer, whose
+// member list Telegram shows administrators only. Its own it may always read.
+func (w *world) mayReadMembers(chatID, userID int64) error {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return requestError("chat not found")
+	}
+	if c.info.Type == models.ChatTypePrivate || c.bot.user.ID == userID {
+		return nil
+	}
+	if err := c.reach(); err != nil {
+		return err
+	}
+	if c.info.Type == models.ChatTypeChannel && !c.bot.administers() {
+		return requestError("member list is inaccessible")
+	}
+	return nil
+}
+
 func (w *world) standingOf(chatID, userID int64) (models.ChatMember, bool) {
 	w.mu.RLock()
 	defer w.mu.RUnlock()
@@ -174,7 +211,7 @@ func (w *world) botAdministers(chatID int64) bool {
 	if !ok {
 		return false
 	}
-	return c.bot.status == models.ChatMemberTypeAdministrator || c.bot.status == models.ChatMemberTypeOwner
+	return c.bot.administers()
 }
 
 func (w *world) botPresent(chatID int64) bool {

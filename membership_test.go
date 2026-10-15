@@ -326,3 +326,167 @@ func TestOnlyAnAdministeringBotHearsWhoCameAndWent(t *testing.T) {
 		t.Errorf("kinds = %v, want %v, with no chat_member for a bot that administers nothing", kinds, want)
 	}
 }
+
+func TestABanReadsKickedAndKeepsThemOutUntilLifted(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	owner, ada := k.User(9).In(news), k.User(7)
+	ada.In(news).Join()
+
+	owner.Ban(ada)
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeBanned || member.Banned == nil {
+		t.Fatalf("member = %+v, want kicked", member)
+	}
+	owner.Unban(ada)
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeLeft {
+		t.Fatalf("member = %+v, want left: unbanning lets them back without putting them back", member)
+	}
+	ada.In(news).Join()
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeMember {
+		t.Errorf("member = %+v, want a member again", member)
+	}
+}
+
+func TestABannedMemberCanNeitherComeBackNorLeave(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+	k := New(tb)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	ada := k.User(7)
+	k.User(9).In(news).Ban(ada)
+
+	ada.In(news).Join()
+	ada.In(news).Leave()
+	if errs := tb.errors(); len(errs) != 2 || !strings.Contains(errs[0], "until they are unbanned") || !strings.Contains(errs[1], "no leaving it") {
+		t.Errorf("errors = %v, want a refused return and a refused leave", errs)
+	}
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeBanned {
+		t.Errorf("member = %+v, want still kicked", member)
+	}
+}
+
+// is_member is "true, if the user is a member of the chat at the moment of the
+// request" (Bot API): a restriction outlives leaving, and comes back with them.
+func TestARestrictedMemberIsAMemberOnlyWhileInTheChat(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	owner, ada := k.User(9).In(news), k.User(7)
+	ada.In(news).Join()
+
+	restricted := func(inside bool) {
+		t.Helper()
+		member := chatMemberOf(t, k, news.ID(), 7)
+		if member.Type != models.ChatMemberTypeRestricted || member.Restricted.IsMember != inside || member.Restricted.CanSendMessages {
+			t.Fatalf("member = %+v %+v, want restricted, silenced, is_member %v", member, member.Restricted, inside)
+		}
+	}
+	owner.Restrict(ada)
+	restricted(true)
+	ada.In(news).Leave()
+	restricted(false)
+	ada.In(news).Join()
+	restricted(true)
+
+	owner.Unrestrict(ada)
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeMember {
+		t.Errorf("member = %+v, want a member once lifted", member)
+	}
+}
+
+func TestRestrictingSomebodyOutsideLeavesThemOutside(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	owner, ada := k.User(9).In(news), k.User(7)
+
+	owner.Restrict(ada)
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeRestricted || member.Restricted.IsMember {
+		t.Fatalf("member = %+v, want restricted and not a member", member)
+	}
+	owner.Unrestrict(ada)
+	if member := chatMemberOf(t, k, news.ID(), 7); member.Type != models.ChatMemberTypeLeft {
+		t.Errorf("member = %+v, want left once lifted", member)
+	}
+}
+
+func TestLiftingWhatWasNeverImposedIsATestError(t *testing.T) {
+	tb := &recordingTB{}
+	defer tb.close()
+	k := New(tb)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news := k.Channel(-1002, "Releases")
+	owner, ada := k.User(9).In(news), k.User(7)
+
+	owner.Unban(ada)
+	owner.Unrestrict(ada)
+	owner.Ban(ada)
+	owner.Restrict(ada)
+	want := []string{"not banned", "not restricted", "Unban them before restricting"}
+	if errs := tb.errors(); len(errs) != len(want) {
+		t.Fatalf("errors = %v, want %d", errs, len(want))
+	} else {
+		for i, w := range want {
+			if !strings.Contains(errs[i], w) {
+				t.Errorf("error %d = %q, want it to say %q", i, errs[i], w)
+			}
+		}
+	}
+}
+
+// Removing somebody from a group is news in it, and an administering bot hears
+// the standing change after the service message.
+func TestABanIsHeardAsTelegramSendsIt(t *testing.T) {
+	k := New(t, alsoHearing("chat_member"))
+	var got updates
+	got.collect(k)
+	team := k.Group(-42, "Standup")
+	owner, ada := k.User(9).In(team), k.User(7)
+	ada.In(team).Join()
+	owner.Ban(ada)
+	owner.Restrict(k.User(8))
+
+	want := []string{"message", "chat_member", "message", "chat_member", "chat_member"}
+	if kinds := deliveredKinds(got.all()); !slices.Equal(kinds, want) {
+		t.Fatalf("kinds = %v, want %v", kinds, want)
+	}
+	removed := got.all()[2].Message
+	if removed.LeftChatMember == nil || removed.LeftChatMember.ID != 7 || removed.From.ID != 9 {
+		t.Errorf("service = %+v, want Ada removed by the owner", removed)
+	}
+	if now := got.all()[3].ChatMember.NewChatMember; now.Type != models.ChatMemberTypeBanned {
+		t.Errorf("chat_member = %+v, want kicked", now)
+	}
+}
+
+// "The method is only guaranteed to work for other users if the bot is an
+// administrator in the chat" (Bot API); a channel shows its members to its
+// administrators alone.
+func TestAChannelsMembersAreReadByItsAdministratorsAlone(t *testing.T) {
+	k := New(t)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	news, team := k.Channel(-1002, "Releases"), k.Group(-42, "Standup")
+	k.User(7)
+	owner := k.User(9)
+
+	owner.In(news).DemoteBot()
+	owner.In(team).DemoteBot()
+	reply := callForm(t, k, "getChatMember", map[string]string{"chat_id": "-1002", "user_id": "7"})
+	if reply.OK || reply.status != 400 || !strings.Contains(reply.Description, "member list is inaccessible") {
+		t.Errorf("reply = %+v, want the member list refused", reply)
+	}
+	if self := chatMemberOf(t, k, news.ID(), k.botUser().ID); self.Type != models.ChatMemberTypeMember {
+		t.Errorf("the bot reads itself as %+v, want its own standing", self)
+	}
+	if member := chatMemberOf(t, k, team.ID(), 7); member.Type != models.ChatMemberTypeLeft {
+		t.Errorf("in a group, member = %+v, want it read by a bot that is only a member", member)
+	}
+
+	owner.In(news).RemoveBot()
+	reply = callForm(t, k, "getChatMember", map[string]string{"chat_id": "-1002", "user_id": "7"})
+	if reply.status != 403 || !strings.Contains(reply.Description, "kicked from the channel chat") {
+		t.Errorf("reply = %+v, want Telegram's forbidden", reply)
+	}
+}

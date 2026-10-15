@@ -546,6 +546,24 @@ ada.In(team).Leave()
 Speaking is enough to be in the room, though: somebody who left is back on the
 roster the moment they say something.
 
+An administrator removing or silencing somebody is the same kind of event, done
+by the member acting:
+
+```go
+owner := k.User(9).In(team)
+owner.Ban(ada)          // "kicked": she can't Join until Unban
+owner.Unban(ada)        // "left": let back in, not put back
+owner.Restrict(ada)     // "restricted", silenced
+owner.Unrestrict(ada)   // a member again, or "left" if she is outside
+```
+
+A restriction outlives leaving, as Telegram keeps it: `getChatMember` answers
+`restricted` with `is_member` saying whether she is in the chat at that moment,
+through every `Join` and `Leave` after. Removing somebody who was in a group is
+the `left_chat_member` service message from the administrator, then the
+`chat_member` update. Lifting what was never imposed, and a banned member joining
+or leaving, are test errors.
+
 `ada.In(team).Edit(sent, "what I meant")` is the same idea for a message: the
 member rewording what they said, which the bot hears as `edited_message`. Only
 their own message is theirs to edit.
@@ -620,6 +638,11 @@ news := k.Channel(-1001234567890, "Releases")
 ada := k.User(7)          // known, but not subscribed: "left"
 ada.In(news).Join()       // subscribed: "member"
 ```
+
+A channel shows its members to its administrators only. A bot that is merely a
+member there is told `400 member list is inaccessible` for anybody but itself,
+and one removed from it gets the `403` of a chat it is out of — the refusals a
+gate has to decide how to treat. In a group a member bot may still read others.
 
 ## Reading what happened
 

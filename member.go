@@ -303,10 +303,21 @@ func (m *Member) shutOut() bool {
 	return true
 }
 
-// Join announces the arrival that In does not.
+// Join announces the arrival that In does not. A restricted member comes back
+// still restricted; a banned one cannot come back until unbanned.
 func (m *Member) Join() {
+	k := m.kitchen()
+	was, _ := k.world.standingFor(m.chat.id, m.user.id)
+	to := standing{status: models.ChatMemberTypeMember}
+	switch was.status {
+	case models.ChatMemberTypeBanned:
+		k.tb.Errorf("kitchen: %s is banned from the chat, and Telegram lets nobody back in until they are unbanned", m)
+		return
+	case models.ChatMemberTypeRestricted:
+		to, to.absent = was, false
+	}
 	who := m.user.identity()
-	m.announce(who, standing{status: models.ChatMemberTypeMember}, &models.Message{NewChatMembers: []models.User{who}})
+	m.announce(who, to, &models.Message{NewChatMembers: []models.User{who}})
 }
 
 // AskToJoin knocks on a chat that admits people by approval, which reaches the
@@ -335,9 +346,69 @@ func (m *Member) AskToJoin(bio ...string) {
 	}})
 }
 
+// Leave is the member walking out. A restricted member stays restricted, only
+// no longer in the chat, as Telegram keeps the restriction for their return.
 func (m *Member) Leave() {
+	k := m.kitchen()
+	was, _ := k.world.standingFor(m.chat.id, m.user.id)
+	to := standing{status: models.ChatMemberTypeLeft}
+	switch was.status {
+	case models.ChatMemberTypeBanned:
+		k.tb.Errorf("kitchen: %s is banned from the chat, so there is no leaving it", m)
+		return
+	case models.ChatMemberTypeRestricted:
+		to, to.absent = was, true
+	}
 	who := m.user.identity()
-	m.announce(who, standing{status: models.ChatMemberTypeLeft}, &models.Message{LeftChatMember: &who})
+	m.announce(who, to, &models.Message{LeftChatMember: &who})
+}
+
+// Ban is this member, an administrator, removing u from the chat for good:
+// getChatMember answers "kicked" until Unban, and u cannot Join meanwhile.
+func (m *Member) Ban(u *User) {
+	was, _ := m.kitchen().world.standingFor(m.chat.id, u.id)
+	var service *models.Message
+	if was.present() {
+		gone, by := u.identity(), m.user.identity()
+		service = &models.Message{From: &by, LeftChatMember: &gone}
+	}
+	m.announce(u.identity(), standing{status: models.ChatMemberTypeBanned, silenced: true}, service)
+}
+
+// Unban lets u back in without putting them back: they are "left" until they Join.
+func (m *Member) Unban(u *User) {
+	if was, _ := m.kitchen().world.standingFor(m.chat.id, u.id); was.status != models.ChatMemberTypeBanned {
+		m.kitchen().tb.Errorf("kitchen: %s is not banned from the chat, so there is nothing to lift", u)
+		return
+	}
+	m.announce(u.identity(), standing{status: models.ChatMemberTypeLeft}, nil)
+}
+
+// Restrict is this member, an administrator, taking away u's right to speak.
+// getChatMember answers "restricted", with is_member saying whether u is in the
+// chat at the moment, through any Join or Leave that follows.
+func (m *Member) Restrict(u *User) {
+	was, _ := m.kitchen().world.standingFor(m.chat.id, u.id)
+	if was.status == models.ChatMemberTypeBanned {
+		m.kitchen().tb.Errorf("kitchen: %s is banned from the chat; Unban them before restricting", u)
+		return
+	}
+	m.announce(u.identity(), standing{status: models.ChatMemberTypeRestricted, silenced: true, absent: !was.present()}, nil)
+}
+
+// Unrestrict gives u their rights back: a member again if they are in the chat,
+// "left" if not.
+func (m *Member) Unrestrict(u *User) {
+	was, _ := m.kitchen().world.standingFor(m.chat.id, u.id)
+	if was.status != models.ChatMemberTypeRestricted {
+		m.kitchen().tb.Errorf("kitchen: %s is not restricted in the chat, so there is nothing to lift", u)
+		return
+	}
+	to := standing{status: models.ChatMemberTypeMember}
+	if was.absent {
+		to.status = models.ChatMemberTypeLeft
+	}
+	m.announce(u.identity(), to, nil)
 }
 
 func (m *Member) Promote(u *User, rights ...Right) {
@@ -360,7 +431,8 @@ func (m *Member) RemoveBot() {
 	m.announceBot(standing{status: models.ChatMemberTypeBanned})
 }
 
-// announce records the new standing and tells the bot, service message first.
+// announce records the new standing and tells the bot, service message first;
+// the service message is from whoever it was about unless it names its author.
 func (m *Member) announce(who models.User, to standing, service *models.Message) {
 	if !m.roster() {
 		return
@@ -368,7 +440,9 @@ func (m *Member) announce(who models.User, to standing, service *models.Message)
 	was, now, chat := m.kitchen().world.restand(m.chat.id, who, to)
 
 	if service != nil {
-		service.From = &who
+		if service.From == nil {
+			service.From = &who
+		}
 		sent := m.kitchen().world.add(m.chat.id, *service)
 		m.awaiting = sent.ID
 		m.kitchen().deliver(models.Update{Message: &sent})

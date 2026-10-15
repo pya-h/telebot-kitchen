@@ -48,6 +48,10 @@ func (s standing) may(r Right) bool {
 	return slices.Contains(s.rights, r)
 }
 
+func (s standing) administers() bool {
+	return s.status == models.ChatMemberTypeAdministrator || s.status == models.ChatMemberTypeOwner
+}
+
 func (s standing) present() bool {
 	switch s.status {
 	case models.ChatMemberTypeLeft, models.ChatMemberTypeBanned:
