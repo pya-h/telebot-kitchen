@@ -67,6 +67,9 @@ type Kitchen struct {
 	last      models.Update // guarded by deliverMu, for Redeliver
 	delivered bool
 
+	lastIn       map[memberSpot]models.Update // guarded by deliverMu
+	lastAnywhere map[int64]models.Update      // guarded by deliverMu
+
 	// The control surface answers on its own goroutines, and a virtual person is
 	// meant to be driven by one.
 	controlMu sync.Mutex
@@ -129,7 +132,10 @@ func New(tb TB, opts ...Option) *Kitchen {
 		closing:     make(chan struct{}),
 		waitTimeout: defaultWaitTimeout,
 		users:       map[int64]*User{},
-		bot:         models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
+
+		lastIn:       map[memberSpot]models.Update{},
+		lastAnywhere: map[int64]models.Update{},
+		bot:          models.User{IsBot: true, FirstName: "Kitchen", Username: "kitchen_bot"},
 	}
 	for _, opt := range opts {
 		opt(k)
@@ -160,6 +166,10 @@ func (k *Kitchen) close() {
 	close(k.closing)
 	k.server.Close()
 }
+
+// Cleanup runs f when the test or order is over, last registered first and
+// while the kitchen still answers, so a bot can stop itself through the API.
+func (k *Kitchen) Cleanup(f func()) { k.tb.Cleanup(f) }
 
 func (k *Kitchen) APIURL() string { return k.server.URL }
 

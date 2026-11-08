@@ -40,3 +40,32 @@ func TestTheMenuHoldsUpUnderLoad(t *testing.T) {
 		},
 	}.Run(t)
 }
+
+// A bot built per order is told which order it is for, and is stopped with it.
+func TestEveryOrderBuildsAndStopsItsOwnBot(t *testing.T) {
+	kitchen.Rush{
+		Orders:      40,
+		Concurrency: 8,
+		Build: func(o *kitchen.Order) error {
+			b, err := New(o.APIURL(), o.Token())
+			if err != nil {
+				return err
+			}
+			o.DeliverTo(b.ProcessUpdate)
+			o.Cleanup(func() {
+				// Runs once the script has returned, with the kitchen still answering.
+				o.Logf("order %d stopped its bot", o.N)
+			})
+			return nil
+		},
+		Serve: func(o *kitchen.Order) {
+			ada := o.User(int64(1000 + o.N))
+			ada.Send(o.Ticket)
+			ada.Expect(kitchen.TextIs("echo: " + o.Ticket))
+
+			if sent := o.Calls().Count(kitchen.Method("sendMessage")); sent != 1 {
+				o.Fatalf("the bot sent %d messages, want 1", sent)
+			}
+		},
+	}.Run(t)
+}

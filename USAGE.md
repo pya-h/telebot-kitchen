@@ -111,6 +111,12 @@ before its offset moves, Telegram hands it the update again by itself; after the
 offset moves, Telegram never hands it back at all. `Redeliver` fails such a test
 and names which of the two it is.
 
+With several people in one kitchen, "last" is whoever spoke most recently, so
+`ada.Redeliver()` hands the bot **that member's** last update instead, under the
+same rules. What happens outside any chat, such as a pre-checkout query or an
+inline query, counts as theirs in every chat they are in. A member who has sent
+nothing has nothing to redeliver, and the test is told so.
+
 ## Talking to the bot
 
 Users are virtual people with their own private chat. `k.User(id, opts...)`
@@ -789,6 +795,19 @@ only watch the clock, so prefer `WaitFor` whenever you can name what you are
 waiting for. `ExpectNo`, `ExpectCount` and `ExpectNothingMore` settle for you,
 because absence is only knowable once the bot stops working.
 
+`ExpectNothingMore` and `member.Settle()` wait for **that member's chat** to go
+quiet: no update from it and no API call aimed at it for 50ms. Others can go on
+talking without holding it up. Updates already on their way when the wait starts
+hold it too, whoever sent them, because a reply to one may land in this chat. Ones
+that arrive after it starts hold only their own chat. `k.Settle()`, `ExpectNo`
+and `ExpectCount` are kitchen-wide: they wait for everyone.
+
+A bot that replies from a queue shared between users is the limit of this. A
+member's duplicate can wait behind other people's messages for longer than the
+quiet period, and all the kitchen can see is the calls that arrive. When the check
+has to be airtight, let everyone finish, call `k.Settle()` once, and only then ask
+each member for `ExpectNothingMore`.
+
 `WithWaitTimeout(d)` caps the wait; it defaults to two seconds.
 
 That goroutine each is also why several messages sent back to back can reach the
@@ -1206,6 +1225,99 @@ replay. `Options` are passed to every kitchen in the rush, and `Timeout` caps on
 order. Sockets, not memory, are the ceiling — each kitchen opens a real listener,
 so `Concurrency` is the knob that matters.
 
+### A bot that is a whole app
+
+A bot with goroutines and connections has to be stopped, and one sharing a
+database with the other orders has to know which order it is. `Build` takes the
+place of `Bot` for that, and `Cleanup` stops it:
+
+```go
+kitchen.Rush{
+	Orders:      40,
+	Concurrency: 8,
+	Build: func(o *kitchen.Order) error {
+		b, err := New(o.APIURL(), o.Token())
+		if err != nil {
+			return err
+		}
+		o.DeliverTo(b.ProcessUpdate)
+		o.Cleanup(func() {
+			// Runs once the script has returned, with the kitchen still answering.
+			o.Logf("order %d stopped its bot", o.N)
+		})
+		return nil
+	},
+	Serve: func(o *kitchen.Order) {
+		ada := o.User(int64(1000 + o.N))
+		ada.Send(o.Ticket)
+		ada.Expect(kitchen.TextIs("echo: " + o.Ticket))
+
+		if sent := o.Calls().Count(kitchen.Method("sendMessage")); sent != 1 {
+			o.Fatalf("the bot sent %d messages, want 1", sent)
+		}
+	},
+}.Run(t)
+```
+
+Set exactly one of `Bot` and `Build`. `Build` sees the `Kitchen`, `N` and
+`Ticket` that `Serve` will see. Its `Rand` is a stream of its own, so what the
+builder draws never moves the script's numbers.
+
+`Cleanup` is on every `Kitchen`. In an ordinary test it is the test's own; in a
+rush or a load run it runs when the script has returned. Either way the last one
+registered runs first, and all of them run before the kitchen closes, so a bot
+can still call the API while it shuts down. What it says then is read for
+foreign tickets too. An order reported stuck keeps its kitchen and **does not
+run its cleanups**. A cleanup is held to `Timeout`, and one that outruns it
+counts as stuck and leaves the remaining ones unrun.
+
+An `Order` is a test handle: `Helper`, `Errorf`, `Fatalf`, `Logf`, `Cleanup` and
+`Failed`, enough for a helper written against `testing.TB`'s common methods.
+`Fatalf` breaks the order with its message and stops the goroutine that called
+it, as `testing` does, so call it from the script or the builder and not from
+one of the bot's goroutines.
+
+`Logf` lines are kept per order and printed only with a broken order's report,
+the last 200 of them. The lines of an order that passes are dropped.
+
+### Several members of one kitchen at once
+
+Each member may run on a goroutine of their own, all at once, and every `Member`
+verb is safe that way. One member driven from two goroutines at once is not
+supported. A `Send` can return before the bot has its update, while somebody else's
+delivery is under way; the updates still arrive in the order they were sent.
+
+These act on the whole kitchen, so they mean what they say only when you intend
+that: `Settle`, `ExpectNo`, `ExpectCount`, `k.Redeliver`, `Clock().Advance` and the
+`Fail` family. They are safe to call at any time, but they see or change everybody.
+
+A member's own action normally skips whatever the bot sent that they have not
+read, because a reply to it is what comes next. That is wrong when the bot writes
+to them while they are also speaking, as in a relay, so give such a user
+`kitchen.ReadsEveryReply()`. Then `Expect` and `ExpectNothingMore` walk every
+message the bot sent them:
+
+```go
+var wg sync.WaitGroup
+for id := int64(1); id <= pairs*2; id++ {
+	member := o.User(id, Started(), ReadsEveryReply())
+	partner := id + 1
+	if id%2 == 0 {
+		partner = id - 1
+	}
+	wg.Go(func() {
+		for i := 1; i <= lines; i++ {
+			member.Send(line(id, i))
+			member.Expect(TextIs(line(partner, i)))
+		}
+		member.Tap("ack")
+		member.Expect(TextIs(fmt.Sprintf("acked by %d", partner)))
+		member.ExpectNothingMore()
+	})
+}
+wg.Wait()
+```
+
 ## Measuring under load
 
 A rush asks whether the bot is correct under concurrency. The load runner asks
@@ -1267,6 +1379,17 @@ bot in it, so you can tell what the numbers belong to. Above, the harness costs
 62µs against a 12ms conversation, so the time is the bot's. Orders that break are
 counted by kind — `assertion`, `stuck`, `build` — rather than reported one by
 one, which is what a rush is for.
+
+`load.Run` takes `Build` and `Cleanup` as a rush does, and `load.Order` is the
+same test handle, except that `Logf` goes nowhere. The time `Build` takes is
+reported on its own as `Report.Build` and taken out of `Report.Order`, which still
+includes bringing the kitchen up, as the baseline does. With `Bot`, the build
+stays inside the conversation's time, as it always has. `Report.Rate` is measured
+over the whole run, builds included.
+
+`Report.Samples` holds one message per kind of failure, from the lowest-numbered
+order that failed that way, and the printed report shows them with the
+`Report.Seed` the run used.
 
 Read them for what they are. Nothing here crosses a network, so the figures
 describe handler and datastore cost, not Telegram. And a bot that paces itself

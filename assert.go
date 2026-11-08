@@ -70,7 +70,7 @@ func (m *Member) ExpectScreen(ms ...Matcher) Screen {
 // ExpectNothingMore asserts the bot sent nothing past the replies already read.
 // It settles first, so it costs the quiet period.
 func (m *Member) ExpectNothingMore() {
-	m.kitchen().Settle()
+	m.Settle()
 	if extra, ok := m.peekReply(); ok {
 		m.kitchen().tb.Errorf("kitchen: %s was also told %q, which no assertion expected", m, extra)
 	}

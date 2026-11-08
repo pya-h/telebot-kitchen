@@ -282,7 +282,7 @@ func (m *Member) Pick(titleOrID string) {
 
 	m.awaitFromNow()
 	landed := k.world.add(m.chat.id, sent)
-	m.awaiting = landed.ID
+	m.readPast(landed.ID)
 	k.deliver(models.Update{ChosenInlineResult: &models.ChosenInlineResult{
 		ResultID: chosen.id, From: who, Query: asked.query,
 	}})

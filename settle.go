@@ -16,16 +16,23 @@ const (
 // activity wakes waiters whenever anything happens in the conversation, inbound
 // delivery included: a test waits on the exchange, not on one side of it.
 type activity struct {
-	mu   sync.Mutex
-	wake chan struct{}
+	mu    sync.Mutex
+	wake  chan struct{}
+	stirs map[int64]uint64
 }
 
-func newActivity() *activity { return &activity{wake: make(chan struct{})} }
+func newActivity() *activity {
+	return &activity{wake: make(chan struct{}), stirs: map[int64]uint64{}}
+}
 
-func (a *activity) note() {
+// note wakes every waiter, and counts against the chats it happened in.
+func (a *activity) note(chats ...int64) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
+	for _, chat := range chats {
+		a.stirs[chat]++
+	}
 	close(a.wake)
 	a.wake = make(chan struct{})
 }
@@ -36,6 +43,14 @@ func (a *activity) watch() <-chan struct{} {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.wake
+}
+
+// watchChat is watch, with how often this chat has stirred so far, read together
+// so a note cannot land between the two.
+func (a *activity) watchChat(chat int64) (<-chan struct{}, uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.wake, a.stirs[chat]
 }
 
 // WaitFor blocks until cond holds, rechecking every time the bot calls the API
@@ -89,6 +104,41 @@ func (k *Kitchen) Settle() {
 	}
 }
 
+// Settle waits for this member's chat to go quiet, however busy the others are.
+// Updates already on their way when it starts hold it too, whoever sent them,
+// because a reply to one may land here; later ones hold only their own chat.
+func (m *Member) Settle() {
+	k := m.kitchen()
+	timeout := time.NewTimer(k.waitTimeout)
+	defer timeout.Stop()
+	rest := time.NewTimer(quietPeriod)
+	defer rest.Stop()
+
+	mark := k.waiting.mark()
+	_, seen := k.activity.watchChat(m.chat.id)
+	held := false
+	for {
+		wake, stirs := k.activity.watchChat(m.chat.id)
+		pending := !k.waiting.reached(mark)
+		if pending || held || stirs != seen {
+			seen = stirs
+			rest.Reset(quietPeriod)
+		}
+		held = pending
+
+		select {
+		case <-wake:
+		case <-rest.C:
+			if !pending {
+				return
+			}
+		case <-timeout.C:
+			k.tb.Errorf("kitchen: the bot was still working on %s after %s, so nothing settled", m, k.waitTimeout)
+			return
+		}
+	}
+}
+
 // ExpectReply waits for the bot's next message to this member and returns it;
 // successive calls walk the replies in order.
 func (m *Member) ExpectReply() Message {
@@ -106,7 +156,7 @@ func (m *Member) awaitReply() (Message, bool) {
 	return reply, ok
 }
 
-// Only the test goroutine ever drives a user, so the watermark needs no lock.
+// Only the goroutine driving this member touches the watermark, so it needs no lock.
 func (m *Member) nextReply() (Message, bool) {
 	next, ok := m.peekReply()
 	if ok {
@@ -129,6 +179,14 @@ func (m *Member) peekReply() (Message, bool) {
 // Whatever is on screen when a member acts is answered by what comes after it.
 func (m *Member) awaitFromNow() {
 	if sent, ok := m.kitchen().world.latest(m.chat.id); ok {
-		m.awaiting = sent.ID
+		m.readPast(sent.ID)
+	}
+}
+
+// readPast is what acting does to the member's place in the chat, unless they
+// are one who reads every reply.
+func (m *Member) readPast(id int) {
+	if !m.kitchen().readsEveryReply(m.user.id) {
+		m.awaiting = id
 	}
 }

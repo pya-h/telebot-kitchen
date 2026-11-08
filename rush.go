@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"regexp"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -23,6 +24,8 @@ const (
 	defaultConcurrency = 8
 	defaultOrderTime   = 10 * time.Second
 	defaultSeed        = 1
+
+	mostLogLines = 200
 )
 
 // Rush runs many short conversations at once, hunting the failures that only
@@ -40,6 +43,7 @@ type Rush struct {
 	Timeout     time.Duration        // how long one order may take before it counts as stuck
 	Options     []Option             // what every kitchen in the rush is built with
 	Bot         func(*Kitchen) error // build the bot and bind it, once per kitchen
+	Build       func(*Order) error   // instead of Bot, for a bot that must know its order
 	Serve       func(*Order)         // the conversation, written with the ordinary verbs
 }
 
@@ -58,14 +62,31 @@ type Order struct {
 	// Rand is seeded from the rush's seed and this number, so a script that
 	// varies itself varies the same way when the failure is replayed.
 	Rand *rand.Rand
+
+	tb *orderTB
 }
+
+func (o *Order) Helper() {}
+
+func (o *Order) Errorf(format string, args ...any) { o.tb.Errorf(format, args...) }
+
+// Fatalf ends the goroutine it is called on, so call it from the script itself.
+func (o *Order) Fatalf(format string, args ...any) {
+	o.tb.Errorf(format, args...)
+	runtime.Goexit()
+}
+
+// Logf keeps a line for the report of an order that breaks.
+func (o *Order) Logf(format string, args ...any) { o.tb.Logf(format, args...) }
+
+func (o *Order) Failed() bool { return o.tb.Failed() }
 
 func (r Rush) Run(tb TB) {
 	if !*runRushes {
 		return
 	}
-	if r.Bot == nil || r.Serve == nil {
-		tb.Errorf("kitchen: a rush needs both a Bot to build and an Order to Serve")
+	if r.Serve == nil || (r.Bot == nil) == (r.Build == nil) {
+		tb.Errorf("kitchen: a rush needs exactly one of Bot and Build, and an Order to Serve")
 		return
 	}
 
@@ -90,10 +111,10 @@ func (r Rush) Run(tb TB) {
 			defer wg.Done()
 			defer func() { <-slots }()
 
-			if errs := r.serveOne(n, seed); len(errs) > 0 {
+			if order := r.serveOne(n, seed); len(order.errs) > 0 {
 				mu.Lock()
 				defer mu.Unlock()
-				broken = append(broken, brokenOrder{n: n, errs: errs})
+				broken = append(broken, order)
 			}
 		}()
 	}
@@ -119,50 +140,55 @@ func (r Rush) settings() (seed int64, orders, concurrency int) {
 	return seed, orders, concurrency
 }
 
-func (r Rush) serveOne(n int, seed int64) []string {
+func (r Rush) serveOne(n int, seed int64) brokenOrder {
 	tb := &orderTB{}
-	k := New(tb, r.Options...)
-	if err := r.Bot(k); err != nil {
-		tb.Errorf("kitchen: build the bot: %v", err)
-		tb.close()
-		return tb.errors()
-	}
-
-	order := &Order{
-		Kitchen: k,
-		Ticket:  ticketOf(n),
-		N:       n,
-		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		defer func() {
-			if p := recover(); p != nil {
-				tb.Errorf("kitchen: the order panicked: %v", p)
-			}
-		}()
-		r.Serve(order)
-	}()
-
 	timeout := r.Timeout
 	if timeout <= 0 {
 		timeout = defaultOrderTime
 	}
-	stuck := time.NewTimer(timeout)
-	defer stuck.Stop()
 
-	select {
-	case <-done:
-		order.checkTickets(tb)
-		tb.close()
-	case <-stuck.C:
-		// The script is still in there, and tearing its kitchen down would block
-		// on whatever it is stuck in, so this one is left standing.
-		tb.Errorf("kitchen: the order was still working after %s, so a verb never settled", timeout)
+	order := &Order{
+		Kitchen: New(tb, r.Options...),
+		Ticket:  ticketOf(n),
+		N:       n,
+		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),
+		tb:      tb,
 	}
-	return tb.errors()
+
+	if r.serve(order, seed, timeout) {
+		// After the cleanups, which is when a bot drains what it still had to say.
+		tb.tearDown(timeout)
+		order.checkTickets(tb)
+	}
+	errs, logs, dropped := tb.written()
+	return brokenOrder{n: n, errs: errs, logs: logs, droppedLogs: dropped}
+}
+
+// serve says whether the order got far enough to be taken down; one left stuck
+// keeps its kitchen, since tearing that down would block on whatever is stuck.
+func (r Rush) serve(o *Order, seed int64, timeout time.Duration) bool {
+	if !o.tb.finishes(func() { r.build(o, seed) }, timeout, "kitchen: the bot was still being built after %s") {
+		return false
+	}
+	if o.tb.Failed() {
+		return true
+	}
+	return o.tb.finishes(func() { r.Serve(o) }, timeout, "kitchen: the order was still working after %s, so a verb never settled")
+}
+
+func (r Rush) build(o *Order, seed int64) {
+	var err error
+	if r.Bot != nil {
+		err = r.Bot(o.Kitchen)
+	} else {
+		// A stream of its own, so what the builder draws cannot move the script's.
+		building := *o
+		building.Rand = rand.New(rand.NewPCG(uint64(seed), ^uint64(o.N)))
+		err = r.Build(&building)
+	}
+	if err != nil {
+		o.tb.Errorf("kitchen: build the bot: %v", err)
+	}
 }
 
 var ticketPattern = regexp.MustCompile(`ticket-\d+`)
@@ -185,8 +211,10 @@ func (o *Order) checkTickets(tb TB) {
 }
 
 type brokenOrder struct {
-	n    int
-	errs []string
+	n           int
+	errs        []string
+	logs        []string
+	droppedLogs int
 }
 
 func (r Rush) report(tb TB, broken []brokenOrder, ran, concurrency int, seed int64) {
@@ -204,6 +232,7 @@ func (r Rush) report(tb TB, broken []brokenOrder, ran, concurrency int, seed int
 			out.WriteString(strings.ReplaceAll(err, "\n", "\n    "))
 			out.WriteString("\n")
 		}
+		o.reportLogs(&out)
 	}
 	fmt.Fprintf(&out, "\n  replay it: go test -run <this test> -kitchen.stress -kitchen.seed=%d -kitchen.order=%d",
 		seed, broken[0].n)
@@ -211,12 +240,30 @@ func (r Rush) report(tb TB, broken []brokenOrder, ran, concurrency int, seed int
 	tb.Errorf("%s", out.String())
 }
 
+func (o brokenOrder) reportLogs(out *strings.Builder) {
+	if len(o.logs) == 0 {
+		return
+	}
+	if o.droppedLogs > 0 {
+		fmt.Fprintf(out, "    its log, %d earlier lines dropped:\n", o.droppedLogs)
+	} else {
+		out.WriteString("    its log:\n")
+	}
+	for _, line := range o.logs {
+		out.WriteString("      ")
+		out.WriteString(strings.ReplaceAll(line, "\n", "\n      "))
+		out.WriteString("\n")
+	}
+}
+
 // orderTB collects an order's failures instead of failing the run, so a rush
 // reports every broken order rather than only the first one to notice.
 type orderTB struct {
-	mu       sync.Mutex
-	errs     []string
-	cleanups []func()
+	mu          sync.Mutex
+	errs        []string
+	logs        []string
+	droppedLogs int
+	cleanups    []func()
 }
 
 func (o *orderTB) Cleanup(f func()) {
@@ -231,8 +278,15 @@ func (o *orderTB) Errorf(format string, args ...any) {
 	o.errs = append(o.errs, fmt.Sprintf(format, args...))
 }
 
-// A rush reports failures; a note has nowhere to go.
-func (o *orderTB) Logf(string, ...any) {}
+func (o *orderTB) Logf(format string, args ...any) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	o.logs = append(o.logs, fmt.Sprintf(format, args...))
+	if len(o.logs) > mostLogLines {
+		o.logs = o.logs[1:]
+		o.droppedLogs++
+	}
+}
 
 func (o *orderTB) Failed() bool {
 	o.mu.Lock()
@@ -240,19 +294,55 @@ func (o *orderTB) Failed() bool {
 	return len(o.errs) > 0
 }
 
-func (o *orderTB) errors() []string {
+func (o *orderTB) written() (errs, logs []string, droppedLogs int) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return slices.Clone(o.errs)
+	return slices.Clone(o.errs), slices.Clone(o.logs), o.droppedLogs
 }
 
-func (o *orderTB) close() {
-	o.mu.Lock()
-	cleanups := o.cleanups
-	o.cleanups = nil
-	o.mu.Unlock()
+// finishes runs one part of the order on its own goroutine, where a Fatalf or a
+// panic ends only that part and a hang cannot hold up the whole rush.
+func (o *orderTB) finishes(part func(), timeout time.Duration, stuck string) bool {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if p := recover(); p != nil {
+				o.Errorf("kitchen: the order panicked: %v", p)
+			}
+		}()
+		part()
+	}()
 
-	for i := len(cleanups) - 1; i >= 0; i-- {
-		cleanups[i]()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		o.Errorf(stuck, timeout)
+		return false
 	}
+}
+
+// tearDown runs the cleanups last first, the kitchen's own among them, and stops
+// at one that hangs.
+func (o *orderTB) tearDown(timeout time.Duration) {
+	for {
+		cleanup, more := o.nextCleanup()
+		if !more || !o.finishes(cleanup, timeout, "kitchen: a cleanup was still running after %s") {
+			return
+		}
+	}
+}
+
+func (o *orderTB) nextCleanup() (func(), bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.cleanups) == 0 {
+		return nil, false
+	}
+	last := o.cleanups[len(o.cleanups)-1]
+	o.cleanups = o.cleanups[:len(o.cleanups)-1]
+	return last, true
 }

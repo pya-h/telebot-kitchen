@@ -50,20 +50,30 @@ func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 // handled: a bot approving a join request from inside its own handler would
 // otherwise wait on a delivery that is waiting on the bot.
 func (k *Kitchen) deliver(u models.Update) {
-	if !k.deliverMu.TryLock() {
-		k.waiting.add(u)
-		return
-	}
-	defer k.deliverMu.Unlock()
+	k.waiting.add(u)
+	k.drain()
+}
 
-	k.handOver(u)
+// drain looks again after letting go: an update queued while the last one was
+// being finished found the lock taken and left its delivery to whoever held it.
+func (k *Kitchen) drain() {
+	for k.waiting.any() && k.deliverMu.TryLock() {
+		k.handOverWaiting()
+		k.deliverMu.Unlock()
+	}
+}
+
+func (k *Kitchen) handOverWaiting() {
 	for next, more := k.waiting.take(); more; next, more = k.waiting.take() {
 		k.handOver(next)
 	}
 }
 
 func (k *Kitchen) handOver(u models.Update) {
-	defer k.activity.note()
+	defer func() {
+		k.waiting.finish()
+		k.activity.note(chatsOf(&u)...)
+	}()
 
 	if id, opened := opener(&u); opened {
 		k.world.start(id)
@@ -80,20 +90,89 @@ func (k *Kitchen) handOver(u models.Update) {
 	// Remembered only once somebody has taken it, so Redeliver never repeats an
 	// update no bot ever saw.
 	if k.hand(u, to) {
-		k.last, k.delivered = u, true
+		k.remember(u)
 	}
+}
+
+// chatsOf is where an update counts as activity; one that happens outside any
+// chat counts in its sender's own.
+func chatsOf(u *models.Update) []int64 {
+	where, who, _ := about(u)
+	switch {
+	case where != nil:
+		return []int64{where.ID}
+	case who != nil:
+		return []int64{who.ID}
+	}
+	return nil
+}
+
+func (k *Kitchen) remember(u models.Update) {
+	k.last, k.delivered = u, true
+
+	where, who, _ := about(&u)
+	switch {
+	case who == nil:
+	case where == nil:
+		k.lastAnywhere[who.ID] = u
+	default:
+		k.lastIn[memberSpot{chat: where.ID, user: who.ID}] = u
+	}
+}
+
+// memberSpot is a user in one chat, which is what a Member is.
+type memberSpot struct{ chat, user int64 }
+
+// lastOf is the newest of what the member did in their chat and what they did
+// outside any chat. Ids only ever rise, so the larger is the later.
+func (k *Kitchen) lastOf(m *Member) (models.Update, bool) {
+	there, inChat := k.lastIn[memberSpot{chat: m.chat.id, user: m.user.id}]
+	anywhere, outside := k.lastAnywhere[m.user.id]
+	if outside && (!inChat || anywhere.ID > there.ID) {
+		return anywhere, true
+	}
+	return there, inChat
 }
 
 // waitingUpdates are the ones made while a delivery was already under way.
 type waitingUpdates struct {
-	mu   sync.Mutex
-	next []models.Update
+	mu       sync.Mutex
+	next     []models.Update
+	entered  uint64
+	finished uint64
 }
 
 func (q *waitingUpdates) add(u models.Update) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	q.next = append(q.next, u)
+	q.entered++
+}
+
+func (q *waitingUpdates) any() bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return len(q.next) > 0
+}
+
+func (q *waitingUpdates) finish() {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.finished++
+}
+
+// mark names everything delivered so far. Updates go through one at a time and
+// in turn, so a count is enough to say when they have all been handled.
+func (q *waitingUpdates) mark() uint64 {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.entered
+}
+
+func (q *waitingUpdates) reached(mark uint64) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.finished >= mark
 }
 
 func (q *waitingUpdates) take() (models.Update, bool) {
@@ -138,27 +217,45 @@ func (k *Kitchen) binding() binding {
 // id, the way Telegram does when it is not sure the first one arrived. Nothing
 // in the chats changes.
 func (k *Kitchen) Redeliver() {
+	k.redeliver(func() (models.Update, bool) { return k.last, k.delivered },
+		"kitchen: nothing has been delivered yet, so there is nothing to redeliver")
+}
+
+// Redeliver hands the bot this member's last update again, whatever anybody else
+// has said since.
+func (m *Member) Redeliver() {
+	k := m.kitchen()
+	k.redeliver(func() (models.Update, bool) { return k.lastOf(m) },
+		"kitchen: "+m.String()+" has had nothing delivered yet, so there is nothing to redeliver")
+}
+
+func (k *Kitchen) redeliver(pick func() (models.Update, bool), nothing string) {
+	defer k.drain()
 	k.deliverMu.Lock()
 	defer k.deliverMu.Unlock()
-	defer k.activity.note()
 
-	if !k.delivered {
-		k.tb.Errorf("kitchen: nothing has been delivered yet, so there is nothing to redeliver")
+	// Whatever is still queued comes first, or "last" would be out of date.
+	k.handOverWaiting()
+
+	u, found := pick()
+	if !found {
+		k.tb.Errorf("%s", nothing)
 		return
 	}
+	defer k.activity.note(chatsOf(&u)...)
 
 	to := k.binding()
 	// Telegram hands a polling bot back no update its offset has confirmed, and
 	// hands it the rest again anyway.
 	if to.queued() {
-		if k.updates.confirmed(k.last.ID) {
-			k.tb.Errorf("kitchen: the bot's offset has already taken update %d, and Telegram redelivers none it has confirmed", k.last.ID)
+		if k.updates.confirmed(u.ID) {
+			k.tb.Errorf("kitchen: the bot's offset has already taken update %d, and Telegram redelivers none it has confirmed", u.ID)
 			return
 		}
-		k.tb.Errorf("kitchen: the bot has not taken update %d yet, so its next poll is handed it again without Redeliver", k.last.ID)
+		k.tb.Errorf("kitchen: the bot has not taken update %d yet, so its next poll is handed it again without Redeliver", u.ID)
 		return
 	}
-	k.hand(k.last, to)
+	k.hand(u, to)
 }
 
 // hand gives the update to whatever is bound, and says whether anything took it.

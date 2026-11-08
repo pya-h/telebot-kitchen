@@ -13,8 +13,9 @@ type UserOption func(*userSetup)
 
 type userSetup struct {
 	Identity
-	started       bool
-	hidesForwards bool
+	started         bool
+	hidesForwards   bool
+	readsEveryReply bool
 }
 
 type Identity struct {
@@ -42,6 +43,12 @@ func HidesForwards() UserOption {
 	return func(s *userSetup) { s.hidesForwards = true }
 }
 
+// ReadsEveryReply is a user whose own actions never skip a reply they have not
+// read, for a test where the bot writes to them while they are also speaking.
+func ReadsEveryReply() UserOption {
+	return func(s *userSetup) { s.readsEveryReply = true }
+}
+
 // Started is a user who opened the bot's private chat before the test began.
 func Started() UserOption {
 	return func(s *userSetup) { s.started = true }
@@ -50,11 +57,12 @@ func Started() UserOption {
 type User struct {
 	*Member
 
-	kitchen       *Kitchen
-	id            int64
-	info          Identity
-	hidesForwards bool
-	shared        map[int64]*Member
+	kitchen         *Kitchen
+	id              int64
+	info            Identity
+	hidesForwards   bool
+	readsEveryReply bool
+	shared          map[int64]*Member
 }
 
 // User returns the virtual user with this id, creating them on first mention.
@@ -78,11 +86,11 @@ func (k *Kitchen) User(id int64, opts ...UserOption) *User {
 		u.Member = &Member{user: u, chat: &Chat{kitchen: k, id: id, kind: models.ChatTypePrivate}}
 		k.users[id] = u
 	}
-	setup := userSetup{Identity: u.info, hidesForwards: u.hidesForwards}
+	setup := userSetup{Identity: u.info, hidesForwards: u.hidesForwards, readsEveryReply: u.readsEveryReply}
 	for _, opt := range opts {
 		opt(&setup)
 	}
-	u.info, u.hidesForwards = setup.Identity, setup.hidesForwards
+	u.info, u.hidesForwards, u.readsEveryReply = setup.Identity, setup.hidesForwards, setup.readsEveryReply
 	k.world.join(id, u.telegram())
 	if setup.started {
 		k.world.start(id)
@@ -108,6 +116,12 @@ func (k *Kitchen) hidesForwards(id int64) bool {
 	defer k.mu.RUnlock()
 	u, ok := k.users[id]
 	return ok && u.hidesForwards
+}
+
+func (k *Kitchen) readsEveryReply(id int64) bool {
+	k.mu.RLock()
+	defer k.mu.RUnlock()
+	return k.users[id].readsEveryReply
 }
 
 // In returns this user inside a shared chat, with its own place in the

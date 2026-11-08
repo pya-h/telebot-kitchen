@@ -173,10 +173,11 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var aimedAt []int64
 	token, method, ok := route(r.URL.Path)
 	if method != pollMethod {
 		// Even a call the kitchen turns away is progress a waiter may be watching for.
-		defer k.activity.note()
+		defer func() { k.activity.note(aimedAt...) }()
 	}
 	if !ok {
 		writeError(w, &apiError{Code: http.StatusNotFound, Description: "Not Found"})
@@ -206,6 +207,10 @@ func (k *Kitchen) serve(w http.ResponseWriter, r *http.Request) {
 		k.calls.record(newCall(method, p).rejected(err))
 		writeError(w, err)
 		return
+	}
+
+	if chatID, err := p.chatID(); err == nil {
+		aimedAt = []int64{chatID}
 	}
 
 	call := newCall(method, p)

@@ -33,6 +33,7 @@ type Run struct {
 	Timeout     time.Duration                // how long one order may take before it counts as stuck
 	Options     []kitchen.Option             // what every kitchen in the run is built with
 	Bot         func(*kitchen.Kitchen) error // build the bot and bind it, once per kitchen
+	Build       func(*Order) error           // instead of Bot, timed apart from the conversation
 	Serve       func(*Order)                 // the conversation to measure
 }
 
@@ -45,7 +46,22 @@ type Order struct {
 	Rand   *rand.Rand
 
 	steps *stepLog
+	tb    *orderTB
 }
+
+func (o *Order) Helper() {}
+
+func (o *Order) Errorf(format string, args ...any) { o.tb.Errorf(format, args...) }
+
+// Fatalf ends the goroutine it is called on, so call it from the script itself.
+func (o *Order) Fatalf(format string, args ...any) {
+	o.tb.Errorf(format, args...)
+	runtime.Goexit()
+}
+
+func (o *Order) Logf(string, ...any) {}
+
+func (o *Order) Failed() bool { return o.tb.failed() }
 
 // Step times one part of the conversation, so the report can say where the time
 // went. Name it after the verb it wraps, or after what it achieves.
@@ -56,17 +72,21 @@ func (o *Order) Step(name string, do func()) {
 }
 
 func (r Run) Measure() Report {
-	orders, concurrency := r.Orders, r.Concurrency
+	orders, concurrency, seed := r.Orders, r.Concurrency, r.Seed
 	if orders <= 0 {
 		orders = defaultOrders
 	}
 	if concurrency <= 0 {
 		concurrency = defaultConcurrency
 	}
+	if seed == 0 {
+		seed = defaultSeed
+	}
 
-	report := Report{Orders: orders, Concurrency: concurrency}
-	if r.Bot == nil || r.Serve == nil {
+	report := Report{Orders: orders, Concurrency: concurrency, Seed: seed}
+	if r.Serve == nil || (r.Bot == nil) == (r.Build == nil) {
 		report.Failures = map[string]int{"setup": orders}
+		report.Samples = map[string]string{"setup": "a run needs exactly one of Bot and Build, and a Serve"}
 		return report
 	}
 
@@ -77,17 +97,19 @@ func (r Run) Measure() Report {
 	peak := watchGoroutines()
 	steps := newStepLog()
 	conversations := make([]time.Duration, orders)
-	failures := map[string]int{}
+	var builds []time.Duration
+	broken := newBreakage()
 	var mu sync.Mutex
 
 	started := time.Now()
 	run(orders, concurrency, func(n int) {
-		took, kind := r.serveOne(n, steps)
-		conversations[n-1] = took
-		if kind != "" {
+		result := r.serveOne(n, seed, steps)
+		conversations[n-1] = result.took
+		broken.add(n, result.failed, result.why)
+		if r.Build != nil {
 			mu.Lock()
 			defer mu.Unlock()
-			failures[kind]++
+			builds = append(builds, result.build)
 		}
 	})
 	report.Elapsed = time.Since(started)
@@ -95,63 +117,100 @@ func (r Run) Measure() Report {
 
 	report.Rate = float64(orders) / report.Elapsed.Seconds()
 	report.Order = spread("conversation", conversations)
+	report.Build = spread("build", builds)
 	report.Steps = steps.spreads()
-	report.Failures = failures
+	report.Failures, report.Samples = broken.counts, broken.samples
 	return report
 }
 
-func (r Run) serveOne(n int, steps *stepLog) (took time.Duration, failed string) {
+type orderResult struct {
+	took, build time.Duration
+	failed, why string
+}
+
+func (r Run) serveOne(n int, seed int64, steps *stepLog) orderResult {
 	tb := &orderTB{}
-	started := time.Now()
-
-	k := kitchen.New(tb, r.Options...)
-	if err := r.Bot(k); err != nil {
-		tb.close()
-		return time.Since(started), "build"
-	}
-
-	seed := r.Seed
-	if seed == 0 {
-		seed = defaultSeed
-	}
-	order := &Order{
-		Kitchen: k,
-		Ticket:  "ticket-" + strconv.Itoa(n),
-		N:       n,
-		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),
-		steps:   steps,
-	}
-
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		defer func() {
-			if p := recover(); p != nil {
-				tb.Errorf("the order panicked: %v", p)
-			}
-		}()
-		r.Serve(order)
-	}()
-
 	timeout := r.Timeout
 	if timeout <= 0 {
 		timeout = defaultOrderTime
 	}
-	stuck := time.NewTimer(timeout)
-	defer stuck.Stop()
+	started := time.Now()
 
-	select {
-	case <-done:
-		took = time.Since(started)
-		tb.close()
-		if tb.failed() {
-			return took, "assertion"
-		}
-		return took, ""
-	case <-stuck.C:
-		// Its kitchen is left standing: tearing it down would block on whatever
-		// the script is stuck in.
-		return time.Since(started), "stuck"
+	order := &Order{
+		Kitchen: kitchen.New(tb, r.Options...),
+		Ticket:  "ticket-" + strconv.Itoa(n),
+		N:       n,
+		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),
+		steps:   steps,
+		tb:      tb,
+	}
+
+	building := time.Now()
+	if !tb.finishes(func() { r.build(order, seed) }, timeout, "the bot was still being built after %s") {
+		return orderResult{took: time.Since(started), failed: "stuck", why: tb.lastSaid()}
+	}
+	// Only Build is apart: with Bot the conversation goes on counting what it always has.
+	var built time.Duration
+	if r.Build != nil {
+		built = time.Since(building)
+	}
+	if tb.failed() {
+		tb.tearDown(timeout)
+		return orderResult{took: time.Since(started) - built, build: built, failed: "build", why: tb.firstSaid()}
+	}
+
+	if !tb.finishes(func() { r.Serve(order) }, timeout, "the order was still working after %s") {
+		return orderResult{took: time.Since(started) - built, build: built, failed: "stuck", why: tb.lastSaid()}
+	}
+	result := orderResult{took: time.Since(started) - built, build: built}
+	switch {
+	case !tb.tearDown(timeout):
+		result.failed, result.why = "stuck", tb.lastSaid()
+	case tb.failed():
+		result.failed, result.why = "assertion", tb.firstSaid()
+	}
+	return result
+}
+
+func (r Run) build(o *Order, seed int64) {
+	var err error
+	if r.Bot != nil {
+		err = r.Bot(o.Kitchen)
+	} else {
+		// A stream of its own, so what the builder draws cannot move the script's.
+		building := *o
+		building.Rand = rand.New(rand.NewPCG(uint64(seed), ^uint64(o.N)))
+		err = r.Build(&building)
+	}
+	if err != nil {
+		o.tb.Errorf("build the bot: %v", err)
+	}
+}
+
+// breakage counts failures by kind, keeping the lowest order's message for each,
+// so two runs of the same script show the same sample.
+type breakage struct {
+	mu      sync.Mutex
+	counts  map[string]int
+	samples map[string]string
+	from    map[string]int
+}
+
+func newBreakage() *breakage {
+	return &breakage{counts: map[string]int{}, samples: map[string]string{}, from: map[string]int{}}
+}
+
+func (b *breakage) add(n int, kind, why string) {
+	if kind == "" {
+		return
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.counts[kind]++
+	if first, seen := b.from[kind]; !seen || n < first {
+		b.from[kind] = n
+		b.samples[kind] = fmt.Sprintf("order %d: %s", n, why)
 	}
 }
 
@@ -167,7 +226,7 @@ func (r Run) baseline(orders, concurrency int) Spread {
 		k := kitchen.New(tb, r.Options...)
 		k.DeliverTo(func(context.Context, *models.Update) {})
 		k.User(int64(n)).Send("ping")
-		tb.close()
+		tb.tearDown(defaultOrderTime)
 
 		empty[n-1] = time.Since(started)
 	})
@@ -246,7 +305,7 @@ func (l *stepLog) spreads() []Spread {
 // than reporting each one, which is what a rush is for.
 type orderTB struct {
 	mu       sync.Mutex
-	broke    bool
+	said     []string
 	cleanups []func()
 }
 
@@ -256,10 +315,10 @@ func (o *orderTB) Cleanup(f func()) {
 	o.cleanups = append(o.cleanups, f)
 }
 
-func (o *orderTB) Errorf(string, ...any) {
+func (o *orderTB) Errorf(format string, args ...any) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.broke = true
+	o.said = append(o.said, fmt.Sprintf(format, args...))
 }
 
 func (o *orderTB) Logf(string, ...any) {}
@@ -269,18 +328,69 @@ func (o *orderTB) Failed() bool { return o.failed() }
 func (o *orderTB) failed() bool {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	return o.broke
+	return len(o.said) > 0
 }
 
-func (o *orderTB) close() {
+func (o *orderTB) firstSaid() string {
 	o.mu.Lock()
-	cleanups := o.cleanups
-	o.cleanups = nil
-	o.mu.Unlock()
+	defer o.mu.Unlock()
+	return o.said[0]
+}
 
-	for i := len(cleanups) - 1; i >= 0; i-- {
-		cleanups[i]()
+func (o *orderTB) lastSaid() string {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	return o.said[len(o.said)-1]
+}
+
+// finishes runs one part of the order on its own goroutine, where a Fatalf or a
+// panic ends only that part and a hang cannot hold up the whole run.
+func (o *orderTB) finishes(part func(), timeout time.Duration, stuck string) bool {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		defer func() {
+			if p := recover(); p != nil {
+				o.Errorf("the order panicked: %v", p)
+			}
+		}()
+		part()
+	}()
+
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true
+	case <-timer.C:
+		o.Errorf(stuck, timeout)
+		return false
 	}
+}
+
+// tearDown runs the cleanups last first, the kitchen's own among them, and says
+// false at one that hangs.
+func (o *orderTB) tearDown(timeout time.Duration) bool {
+	for {
+		cleanup, more := o.nextCleanup()
+		if !more {
+			return true
+		}
+		if !o.finishes(cleanup, timeout, "a cleanup was still running after %s") {
+			return false
+		}
+	}
+}
+
+func (o *orderTB) nextCleanup() (func(), bool) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if len(o.cleanups) == 0 {
+		return nil, false
+	}
+	last := o.cleanups[len(o.cleanups)-1]
+	o.cleanups = o.cleanups[:len(o.cleanups)-1]
+	return last, true
 }
 
 // Report is what a run measured. Every duration is real time.
@@ -290,11 +400,15 @@ type Report struct {
 	Elapsed     time.Duration
 	Rate        float64 // orders per second
 
-	Order    Spread // the whole conversation
+	Seed int64 // what Order.Rand ran from
+
+	Order    Spread // the whole conversation, with a Build's time taken out
+	Build    Spread // what Build took, when the run has one
 	Steps    []Spread
 	Baseline Spread // the same lifecycle with no bot in it
 
 	Failures map[string]int
+	Samples  map[string]string // the lowest order's message for each kind of failure
 
 	Goroutines int // the peak seen while the run was going
 }
@@ -332,10 +446,13 @@ func percentile(sorted []time.Duration, q float64) time.Duration {
 
 func (r Report) String() string {
 	var out strings.Builder
-	fmt.Fprintf(&out, "%d orders at %d-way concurrency in %s — %.0f orders/sec\n\n",
-		r.Orders, r.Concurrency, round(r.Elapsed), r.Rate)
+	fmt.Fprintf(&out, "%d orders at %d-way concurrency in %s — %.0f orders/sec, seed %d\n\n",
+		r.Orders, r.Concurrency, round(r.Elapsed), r.Rate, r.Seed)
 
 	fmt.Fprintf(&out, "  %-22s %s\n", r.Order.Name, r.Order.line())
+	if r.Build.Count > 0 {
+		fmt.Fprintf(&out, "  %-22s %s\n", r.Build.Name, r.Build.line())
+	}
 	fmt.Fprintf(&out, "  %-22s %s\n", r.Baseline.Name, r.Baseline.line())
 	fmt.Fprintf(&out, "  %-22s p50 %s\n\n", "net of the kitchen", round(r.Net()))
 
@@ -354,6 +471,9 @@ func (r Report) String() string {
 	}
 	for _, kind := range slices.Sorted(maps.Keys(r.Failures)) {
 		fmt.Fprintf(&out, "  %s: %d orders\n", kind, r.Failures[kind])
+		if sample := r.Samples[kind]; sample != "" {
+			fmt.Fprintf(&out, "    %s\n", strings.ReplaceAll(sample, "\n", "\n    "))
+		}
 	}
 	return out.String()
 }

@@ -374,7 +374,11 @@ func (m *Member) Pay() (Payment, bool) {
 		TotalAmount:    inv.amount,
 		InvoicePayload: inv.payload,
 	}})
-	k.Settle()
+	k.waitFor(func() bool {
+		_, asked := k.payments.answered(query)
+		return asked
+	})
+	m.Settle()
 
 	answer, answered := k.payments.answered(query)
 	if !answered {

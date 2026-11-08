@@ -222,7 +222,7 @@ func (m *Member) sayAll(msgs ...models.Message) []models.Message {
 		msg.From = &sender
 		sent[i] = m.kitchen().world.add(m.chat.id, msg)
 	}
-	m.awaiting = sent[len(sent)-1].ID
+	m.readPast(sent[len(sent)-1].ID)
 	for i := range sent {
 		m.kitchen().deliver(models.Update{Message: &sent[i]})
 	}
@@ -444,7 +444,7 @@ func (m *Member) announce(who models.User, to standing, service *models.Message)
 			service.From = &who
 		}
 		sent := m.kitchen().world.add(m.chat.id, *service)
-		m.awaiting = sent.ID
+		m.readPast(sent.ID)
 		m.kitchen().deliver(models.Update{Message: &sent})
 	}
 	// Telegram tells only a bot that administers the chat who came and went.
