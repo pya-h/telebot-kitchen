@@ -62,13 +62,13 @@ type Kitchen struct {
 	address     string
 	waitTimeout time.Duration
 
-	deliverMu sync.Mutex
-	waiting   waitingUpdates
-	last      models.Update // guarded by deliverMu, for Redeliver
-	delivered bool
+	waiting *waitingUpdates
 
-	lastIn       map[memberSpot]models.Update // guarded by deliverMu
-	lastAnywhere map[int64]models.Update      // guarded by deliverMu
+	// Touched only by whoever holds the turn in waiting, for Redeliver.
+	last         models.Update
+	delivered    bool
+	lastIn       map[memberSpot]models.Update
+	lastAnywhere map[int64]models.Update
 
 	// The control surface answers on its own goroutines, and a virtual person is
 	// meant to be driven by one.
@@ -129,6 +129,7 @@ func New(tb TB, opts ...Option) *Kitchen {
 		updates:     newPollQueue(),
 		faults:      newFaultStore(),
 		activity:    newActivity(),
+		waiting:     newWaitingUpdates(),
 		closing:     make(chan struct{}),
 		waitTimeout: defaultWaitTimeout,
 		users:       map[int64]*User{},

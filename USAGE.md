@@ -650,6 +650,27 @@ member there is told `400 member list is inaccessible` for anybody but itself,
 and one removed from it gets the `403` of a chat it is out of — the refusals a
 gate has to decide how to treat. In a group a member bot may still read others.
 
+### When the bot deletes
+
+`deleteMessage` and `deleteMessages` are held to Telegram's limits, on the kitchen's
+clock, so a test reaches them with `k.Clock().Advance`:
+
+- A message 48 hours old or more is refused with a `400`. A dice in a private chat
+  is refused until it is 24 hours old, so it can be deleted only between the two.
+- `deleteMessages` takes up to 100 ids. Ids that aren't found are skipped, and if
+  none is found, or the list is empty, the answer is still `true`, as it is from
+  Telegram.
+- **One id that is found but can't be deleted refuses the whole call**, and nothing
+  is deleted. Telegram checks them all before deleting any, so a batch holding one
+  message too old, or one fresh dice, fails as a whole.
+
+The rights are the ones `deleteMessage` always had. The bot hears no update for
+what it deletes itself.
+
+```go
+done, err := b.DeleteMessages(context.Background(), &bot.DeleteMessagesParams{ChatID: 7, MessageIDs: []int{theirs.ID, own.ID}})
+```
+
 ## Reading what happened
 
 Two sources, one vocabulary.
@@ -1284,8 +1305,8 @@ the last 200 of them. The lines of an order that passes are dropped.
 
 Each member may run on a goroutine of their own, all at once, and every `Member`
 verb is safe that way. One member driven from two goroutines at once is not
-supported. A `Send` can return before the bot has its update, while somebody else's
-delivery is under way; the updates still arrive in the order they were sent.
+supported. Updates reach the bot one at a time, in the order they were sent, and
+a `Send` returns once the bot has been handed its own.
 
 These act on the whole kitchen, so they mean what they say only when you intend
 that: `Settle`, `ExpectNo`, `ExpectCount`, `k.Redeliver`, `Clock().Advance` and the
@@ -1495,7 +1516,7 @@ it:
 - **Paid media**, `ForceReply`, and one-time or persistent reply keyboards.
 - **Methods with no answer yet:** `sendLocation` and live locations (`sendVenue`
   is there, and a user's `ShareLocation`), `leaveChat`, `setMyCommands` and
-  `getMyCommands`, `deleteMessages` in the plural, forum topics, giveaways,
+  `getMyCommands`, forum topics, giveaways,
   sticker sets and web-app buttons.
 
 A method the kitchen does not answer is a test error naming it, alongside the

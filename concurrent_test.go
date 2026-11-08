@@ -15,6 +15,13 @@ import (
 
 type sender func(chatID int64, text string)
 
+// inLine waits for one more update to join the line, which wakes nobody.
+func inLine(k *Kitchen, before uint64) {
+	for k.waiting.mark() <= before {
+		time.Sleep(time.Millisecond)
+	}
+}
+
 // scripted is a bot whose whole behaviour is one function, called once per update.
 func scripted(t *testing.T, k *Kitchen, behave func(u *models.Update, send sender)) {
 	t.Helper()
@@ -50,6 +57,88 @@ func TestNoUpdateIsLostWhenMembersSendAtOnce(t *testing.T) {
 	}
 }
 
+func TestASendReturnsOnceTheBotHasHadIt(t *testing.T) {
+	k := New(t)
+	ada, bob := k.User(1, Started()), k.User(2, Started())
+
+	entered, release := make(chan struct{}), make(chan struct{})
+	var heardBob atomic.Bool
+	k.DeliverTo(func(_ context.Context, u *models.Update) {
+		if u.Message.From.ID == 1 {
+			close(entered)
+			<-release
+			return
+		}
+		heardBob.Store(true)
+	})
+
+	var adaDone, bobDone sync.WaitGroup
+	adaDone.Go(func() { ada.Send("slow to handle") })
+	<-entered
+	queued := k.waiting.mark()
+	bobDone.Go(func() {
+		bob.Send("behind ada")
+		if !heardBob.Load() {
+			t.Error("bob's Send returned before the bot had his update")
+		}
+	})
+	inLine(k, queued)
+	close(release)
+	adaDone.Wait()
+	bobDone.Wait()
+}
+
+func TestAnUpdateTheBotMakesInsideItsHandlerStillArrives(t *testing.T) {
+	k := New(t, WithAllowedUpdates("chat_join_request", "chat_member"))
+	team := k.Supergroup(-42, "Team")
+	ada := k.User(1, Started())
+	bob := k.User(2, Started())
+	bob.In(team).PromoteBot()
+
+	var joined atomic.Bool
+	b := syncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
+		if u.ChatJoinRequest != nil {
+			b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{ChatID: u.ChatJoinRequest.Chat.ID, UserID: u.ChatJoinRequest.From.ID})
+		}
+		if u.ChatMember != nil {
+			joined.Store(true)
+		}
+	})
+	k.DeliverTo(b.ProcessUpdate)
+
+	ada.In(team).AskToJoin()
+
+	if !joined.Load() {
+		t.Error("the update the bot's own approval made never reached it")
+	}
+}
+
+func TestAnUpdateTheBotMakesDuringARedeliveryStillArrives(t *testing.T) {
+	k := New(t, WithAllowedUpdates("chat_join_request", "chat_member"))
+	team := k.Supergroup(-42, "Team")
+	ada := k.User(1, Started()).In(team)
+	k.User(2, Started()).In(team).PromoteBot()
+
+	var again, joined atomic.Bool
+	b := syncBot(t, k, func(ctx context.Context, b *bot.Bot, u *models.Update) {
+		if u.ChatJoinRequest != nil && again.Load() {
+			b.ApproveChatJoinRequest(ctx, &bot.ApproveChatJoinRequestParams{ChatID: u.ChatJoinRequest.Chat.ID, UserID: u.ChatJoinRequest.From.ID})
+		}
+		if u.ChatMember != nil {
+			joined.Store(true)
+		}
+	})
+	k.DeliverTo(b.ProcessUpdate)
+
+	ada.AskToJoin()
+	again.Store(true)
+	ada.Redeliver()
+
+	if !joined.Load() {
+		t.Error("the update the bot made during the redelivery never reached it")
+	}
+}
+
 func TestAnUpdateQueuedDuringARedeliveryStillArrives(t *testing.T) {
 	k := New(t)
 	ada, bob := k.User(1, Started()), k.User(2, Started())
@@ -73,11 +162,15 @@ func TestAnUpdateQueuedDuringARedeliveryStillArrives(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(ada.Redeliver)
 	<-entered
-	bob.Send("meanwhile")
+	queued := k.waiting.mark()
+	wg.Go(func() { bob.Send("meanwhile") })
+	inLine(k, queued)
 	close(release)
 	wg.Wait()
 
-	k.WaitFor("bob's update", heardBob.Load)
+	if !heardBob.Load() {
+		t.Error("an update queued during a redelivery never arrived")
+	}
 }
 
 // talkWithoutPause keeps a member speaking until the test is over.
@@ -240,10 +333,40 @@ func TestAMembersWaitGivesUpOnAChatThatNeverGoesQuiet(t *testing.T) {
 	}
 }
 
+func TestSomebodyTalkingInTheSameChatHoldsTheWait(t *testing.T) {
+	tb := &recordingTB{}
+	k := New(tb, WithWaitTimeout(200*time.Millisecond))
+	t.Cleanup(tb.close)
+	k.DeliverTo(func(context.Context, *models.Update) {})
+	room := k.Group(-42, "Room")
+	ada, bob := k.User(1).In(room), k.User(2).In(room)
+
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Go(func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(quietPeriod / 5):
+				bob.Send("still here")
+			}
+		}
+	})
+	ada.Settle()
+	close(stop)
+	wg.Wait()
+
+	if errs := tb.errors(); len(errs) != 1 || !strings.Contains(errs[0], "nothing settled") {
+		t.Errorf("reported %v, want a shared chat's talk to count", errs)
+	}
+}
+
 func TestPayingIsNotHeldUpByAnotherWhoKeepsTalking(t *testing.T) {
 	k := New(t, WithWaitTimeout(500*time.Millisecond))
 	ada, bob := k.User(1, Started()), k.User(2, Started())
 	b, _ := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
 	invoiceFor(t, b, ada.ChatID())
 
 	talkWithoutPause(t, bob)
@@ -268,6 +391,7 @@ func TestPayingWaitsForAnAnswerSlowerThanTheQuietPeriod(t *testing.T) {
 			b.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{PreCheckoutQueryID: u.PreCheckoutQuery.ID, OK: true})
 		})
 	})
+	k.DeliverTo(b.ProcessUpdate)
 	invoiceFor(t, b, ada.ChatID())
 
 	if _, paid := ada.Pay(); !paid {
@@ -280,6 +404,7 @@ func TestAMemberRedeliversTheirOwnLastUpdate(t *testing.T) {
 	ada, bob := k.User(1, Started()), k.User(2, Started())
 
 	b, seen := checkoutBot(t, k, true)
+	k.DeliverTo(b.ProcessUpdate)
 	invoiceFor(t, b, ada.ChatID())
 
 	ada.Pay()
@@ -337,9 +462,7 @@ func TestAMemberWhoSentNothingHasNothingToRedeliver(t *testing.T) {
 func TestAMembersRedeliverStaysInTheirChat(t *testing.T) {
 	k := New(t)
 	ada := k.User(1, Started())
-	room := k.Group(-42, "Room")
-	inRoom := ada.In(room)
-	inRoom.Join()
+	inRoom := ada.In(k.Group(-42, "Room"))
 
 	var last atomic.Value
 	k.DeliverTo(func(_ context.Context, u *models.Update) {
@@ -347,6 +470,7 @@ func TestAMembersRedeliverStaysInTheirChat(t *testing.T) {
 			last.Store(u.Message.Text)
 		}
 	})
+	inRoom.Join()
 
 	inRoom.Send("in the room")
 	ada.Send("in private")
@@ -361,7 +485,6 @@ func TestWhatHappensOutsideAnyChatCountsForTheMember(t *testing.T) {
 	k := New(t)
 	ada := k.User(1, Started())
 	inRoom := ada.In(k.Group(-42, "Room"))
-	inRoom.Join()
 
 	var queries atomic.Int64
 	k.DeliverTo(func(_ context.Context, u *models.Update) {
@@ -369,6 +492,7 @@ func TestWhatHappensOutsideAnyChatCountsForTheMember(t *testing.T) {
 			queries.Add(1)
 		}
 	})
+	inRoom.Join()
 
 	inRoom.Send("hello")
 	inRoom.Search("cats")
@@ -402,7 +526,7 @@ func TestAMembersOwnActionSkipsAnUnreadReplyByDefault(t *testing.T) {
 	scripted(t, k, func(_ *models.Update, send sender) { send(1, "reply") })
 
 	ada.Send("first")
-	k.WaitFor("the first reply", func() bool { return len(k.Calls()) == 1 })
+	k.WaitFor("the first reply", func() bool { return k.Calls().Count(Method("sendMessage")) == 1 })
 	ada.Send("second")
 
 	ada.Expect(TextIs("reply"))
@@ -441,7 +565,7 @@ func TestReadsEveryReplyKeepsWhatTheMemberHasNotRead(t *testing.T) {
 			})
 
 			ada.Send("first")
-			k.WaitFor("the first reply", func() bool { return len(k.Calls()) == 1 })
+			k.WaitFor("the first reply", func() bool { return k.Calls().Count(Method("sendMessage")) == 1 })
 			skip(k, ada)
 
 			ada.Expect(TextIs("reply 1"))

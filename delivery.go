@@ -46,35 +46,40 @@ func (k *Kitchen) DeliverToWebhook(handler http.Handler) {
 	k.hook, k.process, k.polling, k.wire = handler, nil, false, false
 }
 
-// deliver hands one update over, and then any the bot made while it was being
-// handled: a bot approving a join request from inside its own handler would
-// otherwise wait on a delivery that is waiting on the bot.
+// deliver hands one update over and returns once the bot has had it. Members
+// acting at once take turns, each handing over whatever is next until their own
+// is done, so nobody ends up serving the others for as long as they keep talking.
 func (k *Kitchen) deliver(u models.Update) {
-	k.waiting.add(u)
-	k.drain()
+	k.takeTurns(k.waiting.add(u, true))
 }
 
-// drain looks again after letting go: an update queued while the last one was
-// being finished found the lock taken and left its delivery to whoever held it.
-func (k *Kitchen) drain() {
-	for k.waiting.any() && k.deliverMu.TryLock() {
-		k.handOverWaiting()
-		k.deliverMu.Unlock()
+// deliverFromBot is for an update the bot's own API call made. That call may be
+// running inside a handler, which the delivery under way is waiting on, so
+// nothing here may wait in turn.
+func (k *Kitchen) deliverFromBot(u models.Update) {
+	k.waiting.add(u, false)
+	k.takeTurns(0)
+}
+
+func (k *Kitchen) takeTurns(ticket uint64) {
+	for {
+		next, mine := k.waiting.claim(ticket)
+		if !mine {
+			return
+		}
+		k.handOverClaimed(next)
 	}
 }
 
-func (k *Kitchen) handOverWaiting() {
-	for next, more := k.waiting.take(); more; next, more = k.waiting.take() {
-		k.handOver(next)
-	}
+func (k *Kitchen) handOverClaimed(u models.Update) {
+	defer func() {
+		k.waiting.release(true)
+		k.activity.note(chatsOf(&u)...)
+	}()
+	k.handOver(u)
 }
 
 func (k *Kitchen) handOver(u models.Update) {
-	defer func() {
-		k.waiting.finish()
-		k.activity.note(chatsOf(&u)...)
-	}()
-
 	if id, opened := opener(&u); opened {
 		k.world.start(id)
 	}
@@ -134,35 +139,79 @@ func (k *Kitchen) lastOf(m *Member) (models.Update, bool) {
 	return there, inChat
 }
 
-// waitingUpdates are the ones made while a delivery was already under way.
+// waitingUpdates is the line of updates and whose turn it is to hand one over.
+// One goes at a time, in the order they came.
 type waitingUpdates struct {
 	mu       sync.Mutex
-	next     []models.Update
+	turn     *sync.Cond
+	next     []queuedUpdate
+	busy     bool
 	entered  uint64
 	finished uint64
 }
 
-func (q *waitingUpdates) add(u models.Update) {
+type queuedUpdate struct {
+	update models.Update
+	owned  bool // somebody is waiting for it, and will hand it over if nobody has
+}
+
+func newWaitingUpdates() *waitingUpdates {
+	q := &waitingUpdates{}
+	q.turn = sync.NewCond(&q.mu)
+	return q
+}
+
+// add says which ticket the update has: it has been handled once that many are.
+func (q *waitingUpdates) add(u models.Update, owned bool) uint64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.next = append(q.next, u)
+	q.next = append(q.next, queuedUpdate{u, owned})
 	q.entered++
+	return q.entered
 }
 
-func (q *waitingUpdates) any() bool {
+// claim waits while somebody else hands updates over and this ticket is not done,
+// then gives the caller the next update to hand over, if it should. Past its own
+// ticket it takes only what has no owner, the bot's own, which would otherwise
+// sit there until somebody next spoke.
+func (q *waitingUpdates) claim(ticket uint64) (models.Update, bool) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	return len(q.next) > 0
+
+	for q.busy && q.finished < ticket {
+		q.turn.Wait()
+	}
+	nothingOwed := q.finished >= ticket && (len(q.next) == 0 || q.next[0].owned)
+	if q.busy || nothingOwed {
+		return models.Update{}, false
+	}
+	u := q.next[0].update
+	q.next = q.next[1:]
+	q.busy = true
+	return u, true
 }
 
-func (q *waitingUpdates) finish() {
+// hold takes the turn without taking an update, for a redelivery.
+func (q *waitingUpdates) hold() {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.finished++
+	for q.busy {
+		q.turn.Wait()
+	}
+	q.busy = true
 }
 
-// mark names everything delivered so far. Updates go through one at a time and
-// in turn, so a count is enough to say when they have all been handled.
+func (q *waitingUpdates) release(handed bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.busy = false
+	if handed {
+		q.finished++
+	}
+	q.turn.Broadcast()
+}
+
+// mark names everything delivered so far.
 func (q *waitingUpdates) mark() uint64 {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -173,18 +222,6 @@ func (q *waitingUpdates) reached(mark uint64) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	return q.finished >= mark
-}
-
-func (q *waitingUpdates) take() (models.Update, bool) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	if len(q.next) == 0 {
-		return models.Update{}, false
-	}
-	u := q.next[0]
-	q.next = q.next[1:]
-	return u, true
 }
 
 // binding is how the bot is attached to the kitchen, taken in one read.
@@ -230,12 +267,9 @@ func (m *Member) Redeliver() {
 }
 
 func (k *Kitchen) redeliver(pick func() (models.Update, bool), nothing string) {
-	defer k.drain()
-	k.deliverMu.Lock()
-	defer k.deliverMu.Unlock()
-
-	// Whatever is still queued comes first, or "last" would be out of date.
-	k.handOverWaiting()
+	k.waiting.hold()
+	defer k.takeTurns(0)
+	defer k.waiting.release(false)
 
 	u, found := pick()
 	if !found {

@@ -223,7 +223,7 @@ func (k *Kitchen) answerJoinRequest(p params, admit bool) (any, error) {
 
 	sender := k.botUser()
 	was, now, chat := k.world.restand(chatID, who, standing{status: models.ChatMemberTypeMember})
-	k.deliver(models.Update{ChatMember: &models.ChatMemberUpdated{
+	k.deliverFromBot(models.Update{ChatMember: &models.ChatMemberUpdated{
 		Chat: chat, From: sender, Date: int(k.clock.Now().Unix()),
 		OldChatMember: was, NewChatMember: now,
 	}})
