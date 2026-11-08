@@ -40,6 +40,7 @@ var apiMethods = map[string]apiMethod{
 	"editMessageCaption":     (*Kitchen).editMessageCaption,
 	"editMessageReplyMarkup": (*Kitchen).editMessageReplyMarkup,
 	"deleteMessage":          (*Kitchen).deleteMessage,
+	"deleteMessages":         (*Kitchen).deleteMessages,
 	"answerCallbackQuery":    (*Kitchen).answerCallbackQuery,
 	"sendChatAction":         (*Kitchen).sendChatAction,
 	"sendVenue":              (*Kitchen).sendVenue,
@@ -90,6 +91,51 @@ func (p params) messageID() (int, error) {
 		return 0, badRequest("message_id")
 	}
 	return id, nil
+}
+
+const mostDeletedAtOnce = 100
+
+// An empty list is fine: the page says 1-100, but Telegram answers true.
+func (p params) messageIDs() ([]int, error) {
+	raw := p["message_ids"]
+	if raw == "" {
+		return nil, requestError("message identifiers are not specified")
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, requestError("can't parse message_ids JSON object")
+	}
+	list, isList := value.([]any)
+	if !isList {
+		return nil, requestError("expected an Array of message identifiers")
+	}
+	if len(list) > mostDeletedAtOnce {
+		return nil, requestError("too many message identifiers specified")
+	}
+
+	ids := make([]int, len(list))
+	for i, item := range list {
+		var number string
+		switch item := item.(type) {
+		case json.Number:
+			number = item.String()
+		case string:
+			number = item
+		default:
+			return nil, requestError("message identifier must be a Number")
+		}
+		id, err := strconv.ParseInt(number, 10, 32)
+		if err != nil {
+			return nil, requestError("can't parse message identifier as a Number")
+		}
+		if id <= 0 {
+			return nil, requestError("invalid message identifier specified")
+		}
+		ids[i] = int(id)
+	}
+	return ids, nil
 }
 
 func (p params) keyboard() (*models.InlineKeyboardMarkup, error) {

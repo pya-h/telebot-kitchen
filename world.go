@@ -678,6 +678,26 @@ func (w *world) remove(chatID int64, messageID int, may func(*chat, *models.Mess
 	return false, nil
 }
 
+func (w *world) removeAll(chatID int64, messageIDs []int, may func(*chat, *models.Message) error) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	c, ok := w.chats[chatID]
+	if !ok {
+		return nil
+	}
+	for _, id := range messageIDs {
+		if m := w.find(chatID, id); m != nil {
+			if err := may(c, m); err != nil {
+				return err
+			}
+		}
+	}
+	c.messages = slices.DeleteFunc(c.messages, func(m *models.Message) bool { return slices.Contains(messageIDs, m.ID) })
+	c.pinned = slices.DeleteFunc(c.pinned, func(id int) bool { return slices.Contains(messageIDs, id) })
+	return nil
+}
+
 func (w *world) keyboards(chatID int64, limit int) []models.Message {
 	w.mu.RLock()
 	defer w.mu.RUnlock()

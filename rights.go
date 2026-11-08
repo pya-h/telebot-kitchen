@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"time"
 
 	"github.com/go-telegram/bot/models"
 )
@@ -180,15 +181,32 @@ func (w *world) mayPost(chatID int64) error {
 	return nil
 }
 
+const (
+	mostDeleteAge = 48 * time.Hour
+	leastDiceAge  = 24 * time.Hour
+)
+
+var errCannotRevoke = requestError("message can't be deleted for everyone")
+
 // The may* checks below run with the world lock held.
-func (c *chat) mayDelete(m *models.Message, botID int64) error {
+func (c *chat) mayDelete(m *models.Message, botID int64, now time.Time) error {
+	age := now.Sub(time.Unix(int64(m.Date), 0))
+	if age >= mostDeleteAge {
+		if c.info.Type == models.ChatTypeSupergroup || c.info.Type == models.ChatTypeChannel {
+			return requestError("message can't be deleted")
+		}
+		return errCannotRevoke
+	}
+	if m.Dice != nil && c.info.Type == models.ChatTypePrivate && age < leastDiceAge {
+		return errCannotRevoke
+	}
 	if m.From != nil && m.From.ID == botID {
 		return nil
 	}
 	if c.info.Type == models.ChatTypePrivate || c.bot.may(DeleteMessages) {
 		return nil
 	}
-	return requestError("message can't be deleted for everyone")
+	return errCannotRevoke
 }
 
 func (c *chat) blocked() bool {

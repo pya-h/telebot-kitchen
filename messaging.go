@@ -182,16 +182,11 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	// A blocked chat is the one left alone: Telegram documents nothing there, and
-	// a bot clearing up after a block is ordinary.
-	if err := k.world.reach(chatID); err != nil && !errors.Is(err, errBlocked) {
+	if err := k.mayClearUp(chatID); err != nil {
 		return nil, err
 	}
 
-	botID := k.botUser().ID
-	found, err := k.world.remove(chatID, messageID, func(c *chat, m *models.Message) error {
-		return c.mayDelete(m, botID)
-	})
+	found, err := k.world.remove(chatID, messageID, k.deleteCheck())
 	if !found {
 		return nil, requestError("message to delete not found")
 	}
@@ -199,6 +194,41 @@ func (k *Kitchen) deleteMessage(p params) (any, error) {
 		return nil, err
 	}
 	return true, nil
+}
+
+// Ids that aren't there are skipped, but one that is and can't go refuses the
+// whole call with nothing deleted: Telegram checks them all first.
+func (k *Kitchen) deleteMessages(p params) (any, error) {
+	messageIDs, err := p.messageIDs()
+	if err != nil {
+		return nil, err
+	}
+	chatID, err := p.chatID()
+	if err != nil {
+		return nil, err
+	}
+	if err := k.mayClearUp(chatID); err != nil {
+		return nil, err
+	}
+
+	if err := k.world.removeAll(chatID, messageIDs, k.deleteCheck()); err != nil {
+		return nil, err
+	}
+	return true, nil
+}
+
+// A blocked chat is the one left alone: Telegram documents nothing there, and
+// a bot clearing up after a block is ordinary.
+func (k *Kitchen) mayClearUp(chatID int64) error {
+	if err := k.world.reach(chatID); err != nil && !errors.Is(err, errBlocked) {
+		return err
+	}
+	return nil
+}
+
+func (k *Kitchen) deleteCheck() func(*chat, *models.Message) error {
+	botID, now := k.botUser().ID, k.clock.Now()
+	return func(c *chat, m *models.Message) error { return c.mayDelete(m, botID, now) }
 }
 
 const mostAnswer = 200
