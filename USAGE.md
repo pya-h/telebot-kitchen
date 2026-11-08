@@ -1005,7 +1005,8 @@ require.False(t, grantedTo(ada))     // buy → granted → refund → keep is t
 A refund is the bot's own action, so it is recorded in the chat and comes back
 as no update, the same rule its own message, edit and pin follow. The Stars
 ledger reads back through `getStarTransactions`, newest first, with a refund as
-a line of its own going the other way.
+a line of its own going the other way: the same id as the payment it gives back
+and a positive amount, its direction the `receiver`, as Telegram writes it.
 
 An invoice in `XTR` is held to the shape Telegram takes: no `provider_token`,
 exactly one price, and an amount of at least one star. Anything else is a `400`

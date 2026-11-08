@@ -50,7 +50,6 @@ type entry struct {
 type ledger struct {
 	mu        sync.Mutex
 	checkouts int64
-	refunds   int64
 	invoices  []invoice
 	pending   map[string]*checkout
 	charges   []*Payment
@@ -148,9 +147,10 @@ func (l *ledger) refund(userID int64, chargeID string, at int, who models.User) 
 		return Payment{}, requestError("CHARGE_ALREADY_REFUNDED")
 	}
 	paid.Refunded = true
-	l.refunds++
+	// Telegram gives a refund the original payment's id, and the amount as
+	// transferred: the direction is the receiver, never a sign.
 	l.entries = append(l.entries, entry{
-		id: fmt.Sprintf("refund-%d", l.refunds), amount: -paid.Amount, date: at,
+		id: paid.ChargeID, amount: paid.Amount, date: at,
 		user: who, payload: paid.Payload, back: true,
 	})
 	return *paid, nil

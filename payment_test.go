@@ -226,8 +226,11 @@ func TestTheStarLedgerReadsBackThroughTheLibrary(t *testing.T) {
 
 	// Newest first, so the refund leads.
 	back, charge := ledger.Transactions[0], ledger.Transactions[1]
-	if back.Amount != -100 || back.Receiver == nil || back.Receiver.User == nil {
-		t.Errorf("refund = %+v, want it going back to a user", back)
+	if back.Amount != 100 || back.Receiver == nil || back.Receiver.User == nil || back.Source != nil {
+		t.Errorf("refund = %+v, want 100 going back to a user", back)
+	}
+	if back.ID != paid.ChargeID || charge.ID != paid.ChargeID {
+		t.Errorf("ids = %q and %q, want both the payment's %q, as Telegram names a refund", back.ID, charge.ID, paid.ChargeID)
 	}
 	if charge.Amount != 100 || charge.Source == nil || charge.Source.User == nil {
 		t.Errorf("charge = %+v, want it coming from a user", charge)
