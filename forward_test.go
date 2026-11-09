@@ -165,8 +165,8 @@ func TestAForwardKeepsItsFormatting(t *testing.T) {
 	}
 }
 
-// What mmbot's relay does with a forward: copy it on, so the other side sees
-// the bot's message and nobody's name.
+// A bot can pass a forward on by copying it, so the other side sees the bot's
+// message and nobody's name.
 func TestAForwardCopiedOnArrivesUncredited(t *testing.T) {
 	k := talking(t)
 	b := newClient(t, k)

@@ -2,14 +2,19 @@ package kitchen
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 	"sync"
 
 	"github.com/go-telegram/bot/models"
 )
 
-// Telegram takes at most this many results in one answer.
-const mostResults = 50
+// Telegram takes at most this many results in one answer, and this many bytes
+// of offset.
+const (
+	mostResults = 50
+	mostOffset  = 64
+)
 
 type inlineMedia struct {
 	kind    string
@@ -75,22 +80,25 @@ type inlineQuestion struct {
 	chatID   int64
 	userID   int64
 	query    string
+	offset   string
 	answered bool
-	offers   []offer
+	next     string
+	offers   []offer // every page so far, since a client keeps them all on screen
 }
 
 func newInlineBook() *inlineBook { return &inlineBook{asked: map[string]*inlineQuestion{}} }
 
-func (b *inlineBook) ask(id string, chatID, userID int64, query string) {
+func (b *inlineBook) ask(id string, q inlineQuestion) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	b.count++
-	b.asked[id] = &inlineQuestion{at: b.count, chatID: chatID, userID: userID, query: query}
+	q.at = b.count
+	b.asked[id] = &q
 }
 
 // answer fills in a question once; a second answer is as late as no question.
-func (b *inlineBook) answer(id string, offers []offer) bool {
+func (b *inlineBook) answer(id string, offers []offer, next string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -98,18 +106,19 @@ func (b *inlineBook) answer(id string, offers []offer) bool {
 	if !known || asked.answered {
 		return false
 	}
-	asked.answered, asked.offers = true, offers
+	asked.answered, asked.next = true, next
+	asked.offers = append(asked.offers, offers...)
 	return true
 }
 
-// newest is the answered question a member picks from, since a test picks from what they last searched for.
-func (b *inlineBook) newest(chatID, userID int64) (inlineQuestion, bool) {
+// newest is the member's last search, or the last one the bot has answered.
+func (b *inlineBook) newest(chatID, userID int64, answered bool) (inlineQuestion, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	var found *inlineQuestion
 	for _, asked := range b.asked {
-		if asked.chatID != chatID || asked.userID != userID || !asked.answered {
+		if asked.chatID != chatID || asked.userID != userID || (answered && !asked.answered) {
 			continue
 		}
 		if found == nil || asked.at > found.at {
@@ -134,6 +143,10 @@ func (k *Kitchen) answerInlineQuery(p params) (any, error) {
 	}
 	if len(raw) > mostResults {
 		return nil, requestError("RESULTS_TOO_MUCH")
+	}
+	next := p["next_offset"]
+	if len(next) > mostOffset {
+		return nil, requestError("NEXT_OFFSET_INVALID")
 	}
 
 	offers := make([]offer, 0, len(raw))
@@ -172,7 +185,7 @@ func (k *Kitchen) answerInlineQuery(p params) (any, error) {
 	}
 
 	// An answer to a query nobody is waiting on is how Telegram spells one that arrived too late.
-	if !k.inline.answer(id, offers) {
+	if !k.inline.answer(id, offers, next) {
 		return nil, requestError("query is too old and response timeout expired or query ID is invalid")
 	}
 	return true, nil
@@ -237,16 +250,45 @@ func (k *Kitchen) fileNamed(fields map[string]any, resultType string, media inli
 
 // Search types the bot's name and a query into the compose box, which reaches
 // the bot as an inline query rather than as a message.
-func (m *Member) Search(query string) {
+func (m *Member) Search(query string) { m.search(inlineQuestion{query: query}) }
+
+// SearchMore is the member scrolling to the end of the results, which resends
+// the search with the offset the bot's last answer gave.
+func (m *Member) SearchMore() {
+	k := m.kitchen()
+	asked, searched := k.inline.newest(m.chat.id, m.user.id, false)
+	switch {
+	case !searched:
+		k.tb.Errorf("kitchen: %s has no search to scroll", m)
+	case !asked.answered:
+		k.tb.Errorf("kitchen: the bot has not answered %s's search for %q, so there is nothing to scroll", m, asked.query)
+	case asked.next == "":
+		k.tb.Errorf("kitchen: the bot gave %s no next_offset for %q, so a client would not ask for more", m, asked.query)
+	default:
+		m.search(inlineQuestion{query: asked.query, offset: asked.next, offers: slices.Clip(asked.offers)})
+	}
+}
+
+func (m *Member) search(q inlineQuestion) {
 	k := m.kitchen()
 	id := k.world.nextQuery()
-	k.inline.ask(id, m.chat.id, m.user.id, query)
+	q.chatID, q.userID = m.chat.id, m.user.id
+	k.inline.ask(id, q)
 
 	who := m.user.identity()
 	m.awaitFromNow()
 	k.deliver(models.Update{InlineQuery: &models.InlineQuery{
-		ID: id, From: &who, Query: query, ChatType: string(m.chat.kind),
+		ID: id, From: &who, Query: q.query, Offset: q.offset, ChatType: m.chat.inlineType(),
 	}})
+}
+
+// A kitchen's private chats are all a member's own with the bot, which Telegram
+// reports as "sender" and keeps "private" for a chat with somebody else.
+func (c *Chat) inlineType() string {
+	if c.kind == models.ChatTypePrivate {
+		return "sender"
+	}
+	return string(c.kind)
 }
 
 func (m *Member) Pick(titleOrID string) {
@@ -255,7 +297,7 @@ func (m *Member) Pick(titleOrID string) {
 		return
 	}
 
-	asked, answered := k.inline.newest(m.chat.id, m.user.id)
+	asked, answered := k.inline.newest(m.chat.id, m.user.id, true)
 	if !answered {
 		k.tb.Errorf("kitchen: %s has no answered search to pick from", m)
 		return

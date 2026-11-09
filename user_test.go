@@ -238,6 +238,7 @@ func TestAUserWhoBlockedTheBotCannotReachIt(t *testing.T) {
 	}{
 		{"Send", func() { ada.Send("hi") }},
 		{"Tap", func() { ada.Tap("OK") }},
+		{"TapSwitch", func() { ada.TapSwitch("OK") }},
 		{"Edit", func() { ada.Edit(Message{ID: 1, ChatID: ada.ID()}, "hi") }},
 		{"ReactTo", func() { ada.ReactTo(Message{ID: 1, ChatID: ada.ID()}, "👍") }},
 		{"Vote", func() { ada.Vote("yes") }},

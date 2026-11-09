@@ -49,10 +49,25 @@ func buttonsOf(markup *models.InlineKeyboardMarkup) [][]Button {
 	for i, row := range markup.InlineKeyboard {
 		rows[i] = make([]Button, len(row))
 		for j, button := range row {
-			rows[i][j] = Button{Label: button.Text, Data: button.CallbackData, URL: button.URL}
+			rows[i][j] = Button{
+				Label:                        button.Text,
+				Data:                         button.CallbackData,
+				URL:                          button.URL,
+				SwitchInlineQuery:            button.SwitchInlineQuery,
+				SwitchInlineQueryCurrentChat: button.SwitchInlineQueryCurrentChat,
+				SwitchInlineQueryChosenChat:  chosenChat(button.SwitchInlineQueryChosenChat),
+			}
 		}
 	}
 	return rows
+}
+
+func chosenChat(c *models.SwitchInlineQueryChosenChat) *ChosenChat {
+	if c == nil {
+		return nil
+	}
+	chosen := ChosenChat(*c)
+	return &chosen
 }
 
 // Labels break when the wording changes; callback data is translation-proof.

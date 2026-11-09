@@ -149,6 +149,7 @@ in a chat where they blocked the bot is a test error.
 | `SendCommand(name, args...)` | `/name arg arg`, entities included |
 | `SendFormatted(f)` | text with formatting, written as markup or with its spans given ([below](#formatted-text)) |
 | `Tap(labelOrData)` | presses an inline button by its visible label or its callback data |
+| `TapSwitch(labelOrData)` | presses a button that opens an inline query in this chat |
 | `Press(label)` | pushes a key on the reply keyboard |
 | `SendPhoto(name, data, caption)` | an upload the bot can read back through `k.File` |
 | `SendVoice` / `SendAudio` / `SendVideo` / `SendAnimation` / `SendDocument` | the same shape, one per kind |
@@ -168,6 +169,7 @@ in a chat where they blocked the bot is a test error.
 | `AskToJoin(bio...)` | knocks on a chat that admits people by approval |
 | `Boost()` / `Unboost()` | puts a premium boost behind a chat, or takes it back |
 | `Search(query)` | types the bot's name and a query, which is an inline query |
+| `SearchMore()` | scrolls to the end of the results, asking for the bot's next page |
 | `Pick(titleOrID)` | chooses one of the results the bot offered back |
 
 `Tap` looks at the user's current screen. If the label is not there it fails
@@ -385,6 +387,10 @@ k.Settle()
 ada.Pick("Pizza")     // by the result's title, or by its id
 ```
 
+The query says where it was typed in `chat_type`, as Telegram does: `"sender"`
+in the member's own chat with the bot, otherwise `"group"`, `"supergroup"` or
+`"channel"`.
+
 `answerInlineQuery` refuses what Telegram refuses: a query nobody is waiting on
 or one already answered, a result with no id, two results sharing one, more
 than fifty of them, and an article with nothing to send. A result is turned into
@@ -399,6 +405,42 @@ The message is sent by the member, with the bot recorded as the one it went
 through — and that is enough to make it the bot's to edit, which is how an
 inline result gets updated after it lands. Editing by `inline_message_id` is not
 modelled; edit it by its message id like any other.
+
+`SearchMore` is the member reaching the end of the list. It resends the same
+query carrying the `next_offset` of the bot's last answer, so a bot that pages
+is tested on the offsets it really gives out:
+
+```go
+ada.Search("people")
+k.Settle()
+ada.SearchMore()
+k.Settle()
+ada.Pick("Bob") // from any page so far
+```
+
+A client asks only when there is more, so `SearchMore` is a test error before an
+answer and after one with an empty `next_offset`. A new `Search` starts from the
+top and forgets the pages before it. An offset over 64 bytes is refused with
+`NEXT_OFFSET_INVALID`.
+
+A button can open a search too. `Button` shows what it would put in the compose
+box, and each of `SwitchInlineQuery`, `SwitchInlineQueryCurrentChat` and
+`SwitchInlineQueryChosenChat` is nil unless the button is of that kind, since an
+empty query is a real one that types only the bot's name:
+
+```go
+full, _ := ada.Screen().Button("Full list")
+query := *full.SwitchInlineQueryCurrentChat // "people"
+
+ada.TapSwitch("Full list") // an inline_query for "people", in this chat
+```
+
+From there it is a search like any other, and it scrolls and picks the same.
+`Tap` on one of these is a test error, since it sends no callback data.
+`TapSwitch` works on the current-chat kind only, and not in a channel, where
+Telegram doesn't support it. The other two kinds ask the user to choose a chat
+first, so a test reads the query off the `Button` and has the member `Search` in
+the chat they would choose.
 
 What a result becomes follows Telegram: `input_message_content` when there is
 one — text, a location, a venue or a contact — otherwise the media the result

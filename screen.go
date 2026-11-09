@@ -12,6 +12,24 @@ type Button struct {
 	Label string `json:"label"`
 	Data  string `json:"data,omitempty"`
 	URL   string `json:"url,omitempty"`
+
+	// Nil when the button is not of that kind: an empty query still is one.
+	SwitchInlineQuery            *string     `json:"switch_inline_query,omitempty"`
+	SwitchInlineQueryCurrentChat *string     `json:"switch_inline_query_current_chat,omitempty"`
+	SwitchInlineQueryChosenChat  *ChosenChat `json:"switch_inline_query_chosen_chat,omitempty"`
+}
+
+// ChosenChat is the query a button offers and the kinds of chat it may go to.
+type ChosenChat struct {
+	Query             string `json:"query,omitempty"`
+	AllowUserChats    bool   `json:"allow_user_chats,omitempty"`
+	AllowBotChats     bool   `json:"allow_bot_chats,omitempty"`
+	AllowGroupChats   bool   `json:"allow_group_chats,omitempty"`
+	AllowChannelChats bool   `json:"allow_channel_chats,omitempty"`
+}
+
+func (b Button) switchesInline() bool {
+	return b.SwitchInlineQuery != nil || b.SwitchInlineQueryCurrentChat != nil || b.SwitchInlineQueryChosenChat != nil
 }
 
 type Message struct {

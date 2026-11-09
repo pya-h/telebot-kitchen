@@ -53,32 +53,61 @@ func (m *Member) SendCommand(name string, args ...string) {
 
 func (m *Member) Tap(labelOrData string) {
 	k := m.kitchen()
-	if m.shutOut() {
+	screen, button, ok := m.onScreen(labelOrData)
+	switch {
+	case !ok:
+	case button.switchesInline():
+		k.tb.Errorf("kitchen: button %q opens an inline query rather than sending callback data, so it takes TapSwitch", labelOrData)
+	case button.Data == "":
+		k.tb.Errorf("kitchen: button %q sends no callback data, so tapping it does not reach the bot", labelOrData)
+	default:
+		m.tap(screen, button)
+	}
+}
+
+// TapSwitch presses a button that opens an inline query in this chat. Telegram
+// has the other kinds ask the user which chat first, so a test reads their
+// query off the Button and has the member Search there.
+func (m *Member) TapSwitch(labelOrData string) {
+	k := m.kitchen()
+	_, button, ok := m.onScreen(labelOrData)
+	if !ok {
 		return
+	}
+	switch query := button.SwitchInlineQueryCurrentChat; {
+	case query == nil && button.switchesInline():
+		k.tb.Errorf("kitchen: button %q asks %s to choose a chat first, so read its query off the Button and Search in that chat", labelOrData, m)
+	case query == nil:
+		k.tb.Errorf("kitchen: button %q opens no inline query", labelOrData)
+	case m.chat.kind == models.ChatTypeChannel:
+		k.tb.Errorf("kitchen: Telegram does not support button %q in a channel", labelOrData)
+	default:
+		m.Search(*query)
+	}
+}
+
+func (m *Member) onScreen(labelOrData string) (models.Message, Button, bool) {
+	k := m.kitchen()
+	if m.shutOut() {
+		return models.Message{}, Button{}, false
 	}
 	screens := k.world.keyboards(m.chat.id, k.reach())
 	if len(screens) == 0 {
 		k.tb.Errorf("kitchen: %s has no buttons on screen, so %q cannot be tapped", m, labelOrData)
-		return
+		return models.Message{}, Button{}, false
 	}
 
 	var reachable [][]Button
 	for _, screen := range screens {
 		rows := buttonsOf(screen.ReplyMarkup)
-		button, ok := findButton(rows, labelOrData)
-		if !ok {
-			reachable = append(reachable, rows...)
-			continue
+		if button, ok := findButton(rows, labelOrData); ok {
+			return screen, button, true
 		}
-		if button.Data == "" {
-			k.tb.Errorf("kitchen: button %q sends no callback data, so tapping it does not reach the bot", labelOrData)
-			return
-		}
-		m.tap(screen, button)
-		return
+		reachable = append(reachable, rows...)
 	}
 
 	k.tb.Errorf("kitchen: %s has no button %q on screen, found: %s", m, labelOrData, buttonLabels(reachable))
+	return models.Message{}, Button{}, false
 }
 
 func (m *Member) tap(screen models.Message, button Button) {
