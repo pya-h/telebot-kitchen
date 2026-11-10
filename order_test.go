@@ -485,3 +485,25 @@ func TestWhatTheKitchenNotesGoesInTheLogToo(t *testing.T) {
 		t.Errorf("reported %v, want the kitchen's own note beside the failure", errs)
 	}
 }
+
+// Orders may share a bot's database, where a charge id that came twice would read as one payment redelivered.
+func TestEachOrderNamesItsChargesApart(t *testing.T) {
+	rushGate(t, true)
+	tb := &recordingTB{}
+	var prefixes sync.Map
+	Rush{
+		Orders:      4,
+		Concurrency: 2,
+		Build:       func(o *Order) error { return silentBot(o.Kitchen) },
+		Serve:       func(o *Order) { prefixes.Store(o.N, o.payments.chargePrefix) },
+	}.Run(tb)
+
+	if errs := tb.errors(); len(errs) != 0 {
+		t.Fatalf("the rush failed: %v", errs)
+	}
+	for n := 1; n <= 4; n++ {
+		if got, _ := prefixes.Load(n); got != OrderChargeIDs(n) {
+			t.Errorf("order %d charges as %v, want %q", n, got, OrderChargeIDs(n))
+		}
+	}
+}

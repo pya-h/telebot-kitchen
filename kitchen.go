@@ -110,6 +110,17 @@ func WithAllowedUpdates(kinds ...string) Option {
 	return func(k *Kitchen) { k.allowed = slices.Clone(kinds) }
 }
 
+// WithChargeIDs starts every Stars charge id with prefix, "charge" by default. Telegram never gives two payments
+// one id, so kitchens whose bots share a database need prefixes of their own; a rush and a load run give each
+// order one.
+func WithChargeIDs(prefix string) Option {
+	return func(k *Kitchen) {
+		if prefix != "" {
+			k.payments.chargePrefix = prefix
+		}
+	}
+}
+
 func WithWebhookSecret(secret string) Option { return func(k *Kitchen) { k.secret = secret } }
 
 func New(tb TB, opts ...Option) *Kitchen {

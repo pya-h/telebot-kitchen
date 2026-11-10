@@ -137,7 +137,7 @@ func (r Run) serveOne(n int, seed int64, steps *stepLog) orderResult {
 	started := time.Now()
 
 	order := &Order{
-		Kitchen: kitchen.New(tb, r.Options...),
+		Kitchen: kitchen.New(tb, append(slices.Clone(r.Options), kitchen.WithChargeIDs(kitchen.OrderChargeIDs(n)))...),
 		Ticket:  "ticket-" + strconv.Itoa(n),
 		N:       n,
 		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),

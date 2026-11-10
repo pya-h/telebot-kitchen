@@ -497,3 +497,48 @@ func TestTheReportReads(t *testing.T) {
 		}
 	}
 }
+
+// Orders may share a bot's database, where a charge id that came twice would read as one payment redelivered.
+func TestEachOrderOfARunNamesItsChargesApart(t *testing.T) {
+	const orders = 4
+	var bots, charges sync.Map
+	report := Run{
+		Orders:      orders,
+		Concurrency: 2,
+		Build: func(o *Order) error {
+			b, err := bot.New(o.Token(), bot.WithServerURL(o.APIURL()))
+			if err != nil {
+				return err
+			}
+			o.DeliverTo(func(ctx context.Context, u *models.Update) {
+				if q := u.PreCheckoutQuery; q != nil {
+					b.AnswerPreCheckoutQuery(ctx, &bot.AnswerPreCheckoutQueryParams{PreCheckoutQueryID: q.ID, OK: true})
+				}
+			})
+			bots.Store(o.N, b)
+			return nil
+		},
+		Serve: func(o *Order) {
+			ada := o.User(7, kitchen.Started())
+			b, _ := bots.Load(o.N)
+			if _, err := b.(*bot.Bot).SendInvoice(context.Background(), &bot.SendInvoiceParams{
+				ChatID: ada.ChatID(), Title: "Boost", Description: "Thirty days at the top", Payload: "boost",
+				Currency: "XTR", Prices: []models.LabeledPrice{{Label: "Boost", Amount: 100}},
+			}); err != nil {
+				o.Fatalf("invoice: %v", err)
+			}
+			if paid, ok := ada.Pay(); ok {
+				charges.Store(o.N, paid.ChargeID)
+			}
+		},
+	}.Measure()
+
+	if len(report.Failures) != 0 {
+		t.Fatalf("failures %v: %v", report.Failures, report.Samples)
+	}
+	for n := 1; n <= orders; n++ {
+		if got, _ := charges.Load(n); got != kitchen.OrderChargeIDs(n)+"-1" {
+			t.Errorf("order %d's charge is %v, want %q", n, got, kitchen.OrderChargeIDs(n)+"-1")
+		}
+	}
+}

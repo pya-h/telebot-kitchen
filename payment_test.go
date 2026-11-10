@@ -559,3 +559,17 @@ func TestOnlyAStarsChargeIsGivenBackThroughTelegram(t *testing.T) {
 		t.Errorf("star transactions = %+v, want the provider's charge kept out", ledger.Transactions)
 	}
 }
+
+func TestAChargeIDStartsWithTheKitchensPrefix(t *testing.T) {
+	for prefix, want := range map[string]string{"shop-7": "shop-7-1", "": "charge-1"} {
+		k := New(t, WithChargeIDs(prefix))
+		b, _ := checkoutBot(t, k, true)
+		k.DeliverTo(b.ProcessUpdate)
+		ada := k.User(7, Started())
+
+		invoiceFor(t, b, ada.ChatID())
+		if paid, ok := ada.Pay(); !ok || paid.ChargeID != want {
+			t.Errorf("prefix %q: charge id = %q (paid %v), want %q", prefix, paid.ChargeID, ok, want)
+		}
+	}
+}

@@ -55,10 +55,12 @@ type ledger struct {
 	charges   []*Payment
 	byCharge  map[string]*Payment
 	entries   []entry
+	// chargePrefix starts every charge id; Telegram's never repeat, even across bots.
+	chargePrefix string
 }
 
 func newLedger() *ledger {
-	return &ledger{pending: map[string]*checkout{}, byCharge: map[string]*Payment{}}
+	return &ledger{pending: map[string]*checkout{}, byCharge: map[string]*Payment{}, chargePrefix: "charge"}
 }
 
 func (l *ledger) bill(inv invoice) {
@@ -117,7 +119,7 @@ func (l *ledger) charge(c checkout, at int) Payment {
 	defer l.mu.Unlock()
 
 	paid := &Payment{
-		ChargeID: fmt.Sprintf("charge-%d", len(l.charges)+1),
+		ChargeID: fmt.Sprintf("%s-%d", l.chargePrefix, len(l.charges)+1),
 		ChatID:   c.invoice.chatID,
 		UserID:   c.user.ID,
 		Payload:  c.invoice.payload,

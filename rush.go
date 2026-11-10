@@ -148,7 +148,7 @@ func (r Rush) serveOne(n int, seed int64) brokenOrder {
 	}
 
 	order := &Order{
-		Kitchen: New(tb, r.Options...),
+		Kitchen: New(tb, append(slices.Clone(r.Options), WithChargeIDs(OrderChargeIDs(n)))...),
 		Ticket:  ticketOf(n),
 		N:       n,
 		Rand:    rand.New(rand.NewPCG(uint64(seed), uint64(n))),
@@ -192,6 +192,9 @@ func (r Rush) build(o *Order, seed int64) {
 }
 
 var ticketPattern = regexp.MustCompile(`ticket-\d+`)
+
+// OrderChargeIDs is the charge-id prefix a rush or load run gives order n, so no two orders' payments share an id.
+func OrderChargeIDs(n int) string { return "charge-o" + strconv.Itoa(n) }
 
 func ticketOf(n int) string { return "ticket-" + strconv.Itoa(n) }
 

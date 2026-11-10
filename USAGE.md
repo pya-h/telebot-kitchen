@@ -1075,7 +1075,11 @@ require.Equal(t, "boost:30d", paid.Payload)
 ```
 
 `k.Payments()` is every charge the bot has taken, oldest first, each saying
-whether it has since been given back. That last flag is the one worth asserting:
+whether it has since been given back. Charge ids count from `charge-1` in each
+kitchen; `WithChargeIDs("shop")` starts them `shop-1` instead. Telegram never
+gives two payments one id, so bots of several kitchens sharing a database need
+prefixes of their own: a rush and a load run give order n `OrderChargeIDs(n)`,
+`charge-o<n>`, by themselves. That last flag is the one worth asserting:
 a grant handed out on a charge must not survive `refundStarPayment`.
 
 ```go
